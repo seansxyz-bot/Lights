@@ -9,7 +9,7 @@
 
 class GameDayScreen : public Gtk::DrawingArea {
 public:
-  GameDayScreen(const TeamInfo &teamInfo, const GameInfo &gameInfo);
+  GameDayScreen(const TeamRecord &teamInfo, const GameInfo &gameInfo);
   virtual ~GameDayScreen() = default;
 
   void start_animation();
@@ -54,7 +54,7 @@ private:
                            const std::string &militaryTime);
 
 private:
-  TeamInfo m_teamInfo;
+  TeamRecord m_teamInfo;
   GameInfo m_gameInfo;
   std::chrono::system_clock::time_point m_gameTime;
 

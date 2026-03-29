@@ -16,7 +16,8 @@ constexpr int COUNTDOWN_INTERVAL_MS = 1000;
 constexpr double TEXT_SWAP_SECONDS = 1.5 / 2.0;
 } // namespace
 
-GameDayScreen::GameDayScreen(const TeamInfo &teamInfo, const GameInfo &gameInfo)
+GameDayScreen::GameDayScreen(const TeamRecord &teamInfo,
+                             const GameInfo &gameInfo)
     : m_teamInfo(teamInfo), m_gameInfo(gameInfo),
       m_rng(std::random_device{}()) {
 

@@ -440,3 +440,150 @@ int writeThemeColors(const std::string &path,
   sqlite3_close(db);
   return 1;
 }
+
+std::vector<TeamRecord> readTeams(const std::string &dbPath) {
+  std::vector<TeamRecord> teams;
+  sqlite3 *db = nullptr;
+
+  if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
+    if (db)
+      sqlite3_close(db);
+    return teams;
+  }
+
+  const char *sql =
+      "SELECT id, name, league, team_code, "
+      "next_game_url_template, next_game_parser, "
+      "live_game_url_template, live_game_parser, "
+      "api_team_id, enabled, display_order, theme_name, next_game_utc "
+      "FROM teams ORDER BY display_order, name;";
+
+  sqlite3_stmt *stmt = nullptr;
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+      TeamRecord t;
+      t.id = sqlite3_column_int(stmt, 0);
+      t.name = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1)
+                                                  ? sqlite3_column_text(stmt, 1)
+                                                  : (const unsigned char *)"");
+      t.league = reinterpret_cast<const char *>(
+          sqlite3_column_text(stmt, 2) ? sqlite3_column_text(stmt, 2)
+                                       : (const unsigned char *)"");
+      t.teamCode = reinterpret_cast<const char *>(
+          sqlite3_column_text(stmt, 3) ? sqlite3_column_text(stmt, 3)
+                                       : (const unsigned char *)"");
+      t.nextGameUrlTemplate = reinterpret_cast<const char *>(
+          sqlite3_column_text(stmt, 4) ? sqlite3_column_text(stmt, 4)
+                                       : (const unsigned char *)"");
+      t.nextGameParser = reinterpret_cast<const char *>(
+          sqlite3_column_text(stmt, 5) ? sqlite3_column_text(stmt, 5)
+                                       : (const unsigned char *)"");
+      t.liveGameUrlTemplate = reinterpret_cast<const char *>(
+          sqlite3_column_text(stmt, 6) ? sqlite3_column_text(stmt, 6)
+                                       : (const unsigned char *)"");
+      t.liveGameParser = reinterpret_cast<const char *>(
+          sqlite3_column_text(stmt, 7) ? sqlite3_column_text(stmt, 7)
+                                       : (const unsigned char *)"");
+      t.apiTeamId = reinterpret_cast<const char *>(
+          sqlite3_column_text(stmt, 8) ? sqlite3_column_text(stmt, 8)
+                                       : (const unsigned char *)"");
+      t.enabled = sqlite3_column_int(stmt, 9);
+      t.displayOrder = sqlite3_column_int(stmt, 10);
+      t.themeName = reinterpret_cast<const char *>(
+          sqlite3_column_text(stmt, 11) ? sqlite3_column_text(stmt, 11)
+                                        : (const unsigned char *)"");
+      t.nextGameUtc = reinterpret_cast<const char *>(
+          sqlite3_column_text(stmt, 12) ? sqlite3_column_text(stmt, 12)
+                                        : (const unsigned char *)"");
+      teams.push_back(t);
+    }
+  }
+
+  if (stmt)
+    sqlite3_finalize(stmt);
+  sqlite3_close(db);
+  return teams;
+}
+
+bool writeTeam(const std::string &dbPath, const TeamRecord &team) {
+  sqlite3 *db = nullptr;
+  if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
+    if (db)
+      sqlite3_close(db);
+    return false;
+  }
+
+  const char *insertSql =
+      "INSERT INTO teams ("
+      "name, league, team_code, "
+      "next_game_url_template, next_game_parser, "
+      "live_game_url_template, live_game_parser, "
+      "api_team_id, enabled, display_order, theme_name, next_game_utc"
+      ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+
+  const char *updateSql = "UPDATE teams SET "
+                          "name=?, league=?, team_code=?, "
+                          "next_game_url_template=?, next_game_parser=?, "
+                          "live_game_url_template=?, live_game_parser=?, "
+                          "api_team_id=?, enabled=?, display_order=?, "
+                          "theme_name=?, next_game_utc=? "
+                          "WHERE id=?;";
+
+  sqlite3_stmt *stmt = nullptr;
+  const char *sql = (team.id <= 0) ? insertSql : updateSql;
+
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    sqlite3_close(db);
+    return false;
+  }
+
+  int idx = 1;
+  sqlite3_bind_text(stmt, idx++, team.name.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, idx++, team.league.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, idx++, team.teamCode.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, idx++, team.nextGameUrlTemplate.c_str(), -1,
+                    SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, idx++, team.nextGameParser.c_str(), -1,
+                    SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, idx++, team.liveGameUrlTemplate.c_str(), -1,
+                    SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, idx++, team.liveGameParser.c_str(), -1,
+                    SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, idx++, team.apiTeamId.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_int(stmt, idx++, team.enabled);
+  sqlite3_bind_int(stmt, idx++, team.displayOrder);
+  sqlite3_bind_text(stmt, idx++, team.themeName.c_str(), -1, SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, idx++, team.nextGameUtc.c_str(), -1,
+                    SQLITE_TRANSIENT);
+
+  if (team.id > 0)
+    sqlite3_bind_int(stmt, idx++, team.id);
+
+  const bool ok = (sqlite3_step(stmt) == SQLITE_DONE);
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+  return ok;
+}
+
+bool deleteTeam(const std::string &dbPath, int id) {
+  sqlite3 *db = nullptr;
+  if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
+    if (db)
+      sqlite3_close(db);
+    return false;
+  }
+
+  sqlite3_stmt *stmt = nullptr;
+  const char *sql = "DELETE FROM teams WHERE id=?;";
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    sqlite3_close(db);
+    return false;
+  }
+
+  sqlite3_bind_int(stmt, 1, id);
+  const bool ok = (sqlite3_step(stmt) == SQLITE_DONE);
+
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+  return ok;
+}

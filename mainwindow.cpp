@@ -323,6 +323,9 @@ void MainWindow::showSettingsPage() {
 
   m_settingsPage->signal_edit_theme_requested().connect(
       [this]() { showEditThemesPage(); });
+
+  m_settingsPage->signal_edit_teams_requested().connect(
+      [this]() { showTeamListPage(); });
 }
 
 void MainWindow::showThemesPage(bool schedulerMode) {
@@ -440,6 +443,81 @@ void MainWindow::showDeltaGroupPage() {
   m_stack.queue_draw();
 }
 
+void MainWindow::createTeamListPage() {
+  if (m_teamList)
+    return;
+
+  m_teamList = Gtk::manage(
+      new TeamList(ICON_PATH, std::string(SETTINGS_PATH) + "/themes.db"));
+
+  m_teamList->signal_cancel().connect([this]() {
+    removeTeamListPage();
+    showSettingsPage();
+  });
+
+  m_teamList->signal_add_team_requested().connect([this]() {
+    TeamRecord blank;
+    createEditTeamPage(blank);
+    showEditTeamPage(blank);
+  });
+
+  m_teamList->signal_edit_team_requested().connect([this](TeamRecord team) {
+    createEditTeamPage(team);
+    showEditTeamPage(team);
+  });
+}
+
+void MainWindow::showTeamListPage() {
+  createTeamListPage();
+
+  if (m_teamList)
+    m_teamList->reload();
+  m_stack.add(*m_teamList, "team_list");
+  m_stack.set_visible_child(*m_teamList);
+}
+
+void MainWindow::removeTeamListPage() {
+  if (!m_teamList)
+    return;
+
+  m_stack.remove(*m_teamList);
+  m_teamList = nullptr;
+}
+
+void MainWindow::createEditTeamPage(const TeamRecord &team) {
+  removeEditTeamPage();
+
+  m_editTeam = Gtk::manage(new EditTeam(
+      ICON_PATH, (std::string(SETTINGS_PATH) + "/teams.db"), team));
+
+  m_editTeam->signal_cancel().connect([this]() {
+    removeEditTeamPage();
+    showTeamListPage();
+  });
+
+  m_editTeam->signal_saved().connect([this]() {
+    removeEditTeamPage();
+    if (m_teamList)
+      m_teamList->reload();
+    showTeamListPage();
+  });
+
+  m_stack.add(*m_editTeam, "edit_team");
+}
+
+void MainWindow::showEditTeamPage(const TeamRecord &team) {
+  createEditTeamPage(team);
+  m_stack.set_visible_child(*m_editTeam);
+}
+
+void MainWindow::removeEditTeamPage() {
+  if (!m_editTeam)
+    return;
+
+  m_stack.remove(*m_editTeam);
+  m_editTeam = nullptr;
+}
+
 void MainWindow::showClockPage() {
   if (m_clockVisible) {
     LOG_WARN() << "showClockPage ignored because clock is already visible";
@@ -478,10 +556,10 @@ void MainWindow::showGameDayPage() {
 
   destroyTemporaryPage("game_day");
 
-  TeamInfo krakenInfo(SETTINGS_PATH, KRAKEN_FILE);
-  GameInfo gameInfo = readNextGame(SETTINGS_PATH, KRAKEN_FILE);
+  // TeamRecord krakenInfo(SETTINGS_PATH, KRAKEN_FILE);
+  // GameInfo gameInfo = readNextGame(SETTINGS_PATH, KRAKEN_FILE);
 
-  m_gameDayPage = Gtk::manage(new GameDayScreen(krakenInfo, gameInfo));
+  // m_gameDayPage = Gtk::manage(new GameDayScreen(krakenInfo, gameInfo));
   m_gameDayPage->start_animation();
 
   const bool returnToClock = m_clockVisible;
@@ -679,7 +757,7 @@ void MainWindow::refreshNextKrakenGame() {
   m_schedule[16].sTime = krakenGame.militaryTime;
   m_schedule[16].eTime = addHours(krakenGame.militaryTime, 3);
 
-  writeNextGame(SETTINGS_PATH, KRAKEN_FILE, krakenGame);
+  // writeNextGame(SETTINGS_PATH, KRAKEN_FILE, krakenGame);
   writeSchedule(SETTINGS_PATH, m_schedule);
 
   LOG_INFO() << "Kraken game updated. date=" << krakenGame.scheduledDate

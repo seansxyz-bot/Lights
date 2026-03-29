@@ -33,8 +33,10 @@ Settings::Settings(const std::string &iconPath, bool autoSensorOn,
   m_themeControlBtn =
       Gtk::manage(new ImageButton(iconPath + "/theme_control.png", 196));
 
-  m_editThemeBtn = // NEW
-      Gtk::manage(new ImageButton(iconPath + "/dt.png", 196));
+  m_editThemeBtn = Gtk::manage(new ImageButton(iconPath + "/dt.png", 196));
+
+  m_editTeamsBtn =
+      Gtk::manage(new ImageButton(iconPath + "/editteams.png", 196));
 
   m_restartBtn = Gtk::manage(new ImageButton(iconPath + "/restart.png", 160));
   m_okBtn = Gtk::manage(new ImageButton(iconPath + "/ok.png", 96));
@@ -48,7 +50,9 @@ Settings::Settings(const std::string &iconPath, bool autoSensorOn,
   boxA->pack_start(*m_bluetoothBtn, Gtk::PACK_SHRINK);
 
   boxB->pack_start(*m_themeControlBtn, Gtk::PACK_SHRINK);
-  boxB->pack_start(*m_editThemeBtn, Gtk::PACK_SHRINK); // NEW
+  boxB->pack_start(*m_editThemeBtn, Gtk::PACK_SHRINK);
+  boxB->pack_start(*m_editTeamsBtn, Gtk::PACK_SHRINK);
+
   boxC->pack_start(*m_restartBtn, Gtk::PACK_SHRINK);
 
   set_spacing(20);
@@ -78,8 +82,11 @@ Settings::Settings(const std::string &iconPath, bool autoSensorOn,
   m_themeControlBtn->signal_clicked().connect(
       [this]() { m_signalThemeControlRequested.emit(); });
 
-  m_editThemeBtn->signal_clicked().connect( // NEW
+  m_editThemeBtn->signal_clicked().connect(
       [this]() { m_signalEditThemeRequested.emit(); });
+
+  m_editTeamsBtn->signal_clicked().connect(
+      [this]() { m_signalEditTeamsRequested.emit(); });
 
   m_restartBtn->signal_clicked().connect(
       [this]() { m_signalRestartRequested.emit(); });
@@ -110,8 +117,12 @@ sigc::signal<void> &Settings::signal_theme_control_requested() {
   return m_signalThemeControlRequested;
 }
 
-sigc::signal<void> &Settings::signal_edit_theme_requested() { // NEW
+sigc::signal<void> &Settings::signal_edit_theme_requested() {
   return m_signalEditThemeRequested;
+}
+
+sigc::signal<void> &Settings::signal_edit_teams_requested() {
+  return m_signalEditTeamsRequested;
 }
 
 sigc::signal<void> &Settings::signal_restart_requested() {

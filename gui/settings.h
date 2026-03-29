@@ -18,7 +18,8 @@ public:
   sigc::signal<void, bool> &signal_lights_toggled();
   sigc::signal<void, bool> &signal_bluetooth_toggled();
   sigc::signal<void> &signal_theme_control_requested();
-  sigc::signal<void> &signal_edit_theme_requested(); // NEW
+  sigc::signal<void> &signal_edit_theme_requested();
+  sigc::signal<void> &signal_edit_teams_requested(); // NEW
   sigc::signal<void> &signal_restart_requested();
   sigc::signal<void> &signal_done();
 
@@ -31,7 +32,8 @@ private:
   ImageButton *m_lightSwitchBtn = nullptr;
   ImageButton *m_bluetoothBtn = nullptr;
   ImageButton *m_themeControlBtn = nullptr;
-  ImageButton *m_editThemeBtn = nullptr; // NEW
+  ImageButton *m_editThemeBtn = nullptr;
+  ImageButton *m_editTeamsBtn = nullptr; // NEW
   ImageButton *m_restartBtn = nullptr;
   ImageButton *m_okBtn = nullptr;
 
@@ -39,7 +41,8 @@ private:
   sigc::signal<void, bool> m_signalLightsToggled;
   sigc::signal<void, bool> m_signalBluetoothToggled;
   sigc::signal<void> m_signalThemeControlRequested;
-  sigc::signal<void> m_signalEditThemeRequested; // NEW
+  sigc::signal<void> m_signalEditThemeRequested;
+  sigc::signal<void> m_signalEditTeamsRequested; // NEW
   sigc::signal<void> m_signalRestartRequested;
   sigc::signal<void> m_signalDone;
 };

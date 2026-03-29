@@ -15,9 +15,11 @@
 #endif
 
 #include "gui/clock.h"
+#include "gui/editteam.h"
 #include "gui/editthemepage.h"
 #include "gui/editthemes.h"
 #include "gui/settings.h"
+#include "gui/teamlist.h"
 #include "gui/themes.h"
 #include "gui/toastmessage.h"
 #include "threads/doorbellthread.h"
@@ -71,6 +73,8 @@ private:
   GameDayScreen *m_gameDayPage = nullptr;
   EditThemes *m_editThemesPage = nullptr;
   EditThemePage *m_editThemePage = nullptr;
+  TeamList *m_teamList = nullptr;
+  EditTeam *m_editTeam = nullptr;
 
   // ---------- restart toast ----------
   ToastMessage m_toast;
@@ -142,6 +146,13 @@ private:
   bool isGameDay(const std::string &date);
   std::string addHours(const std::string &time24, int hours);
   void onDoorbellChanged(bool pressed);
+
+  void createTeamListPage();
+  void createEditTeamPage(const TeamRecord &team);
+  void showTeamListPage();
+  void showEditTeamPage(const TeamRecord &team);
+  void removeEditTeamPage();
+  void removeTeamListPage();
 
   // ---------- helpers ----------
   void showEditThemesPage();

@@ -86,6 +86,8 @@ add_executable(LightingControl
     gui/editthemepage.h gui/editthemepage.cpp
     tools/buttonimagemaker.h
     gui/toastmessage.h gui/toastmessage.cpp
+    gui/teamlist.h gui/teamlist.cpp
+    gui/editteam.h gui/editteam.cpp
 
 )
 
