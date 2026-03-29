@@ -1,0 +1,442 @@
+#include "settingsrw.h"
+#include <algorithm>
+#include <sqlite3.h>
+
+HttpHelper http;
+std::atomic<bool> writeToServer{true};
+
+std::vector<LEDData> readLEDInfo(std::string path) {
+  path += std::string("/led_info");
+  // Attempt to open the file for reading
+  std::vector<LEDData> data;
+  std::ifstream file(path);
+  if (!file.is_open()) {
+    std::cerr << "Failed to open the file." << std::endl;
+    return data;
+  }
+  // Read the file line by line
+  while (!file.eof()) {
+    LEDData d;
+    file >> d.name >> d.group >> d.redPin >> d.redVal >> d.grnPin >> d.grnVal >>
+        d.bluPin >> d.bluVal;
+    data.push_back(d);
+  }
+
+  data.pop_back();
+
+  if (writeToServer) {
+    // http.sendLEDsAsync("https://lights.seansxyz.com/lights_apis/sync.php",
+    // data,
+    //                    DEVICE);
+    http.sendLEDsAsync("http://192.168.1.100/lights_apis/sync.php", data,
+                       DEVICE);
+  }
+
+  return data;
+}
+
+int writeLEDInfo(std::string path, std::vector<LEDData> data) {
+  path += std::string("/led_info");
+  std::ofstream file(path);
+  int success = 0;
+  if (file.is_open()) {
+    const int len = data.size();
+    for (int i = 0; i < len; i++) {
+      LEDData d = data[i];
+      file << d.name << "\t" << d.group << "\t" << d.redPin << "\t" << d.redVal
+           << "\t" << d.grnPin << "\t" << d.grnVal << "\t" << d.bluPin << "\t"
+           << d.bluVal << std::endl;
+    }
+    success = 1;
+  }
+
+  if (writeToServer) {
+    //   http.sendLEDsAsync("https://lights.seansxyz.com/lights_apis/sync.php",
+    //   data,
+    //                      DEVICE);
+    http.sendLEDsAsync("http://192.168.1.100/lights_apis/sync.php", data,
+                       DEVICE);
+  }
+  file.close();
+  return success;
+}
+
+Options readOptions(std::string path) {
+  // Attempt to open the file for reading
+  std::ifstream file(path + std::string("/option"));
+  Options opts;
+  if (!file.is_open()) {
+    opts.sensor = 1;
+    opts.on = 1;
+    opts.theme = 10;
+    opts.ptrn = 1;
+    writeOptions(path, opts);
+    return readOptions(path);
+  }
+
+  std::string holder;
+
+  // Read the file line by line
+  file >> holder >> opts.sensor >> holder >> opts.on >> holder >> opts.theme >>
+      holder >> opts.ptrn >> holder;
+
+  if (writeToServer) {
+    // http.sendOptionsAsync("https://lights.seansxyz.com/lights_apis/sync.php",
+    //                       opts, DEVICE);
+    http.sendOptionsAsync("http://192.168.1.100/lights_apis/sync.php", opts,
+                          DEVICE);
+  }
+  return opts;
+}
+
+int writeOptions(std::string path, Options data) {
+  std::ofstream file(path + std::string("/option"));
+  int success = 0;
+  if (file.is_open()) {
+    file << "Auto" << "\t" << data.sensor << std::endl;
+    file << "ON" << "\t" << data.on << std::endl;
+    file << "TH" << "\t" << data.theme << std::endl;
+    file << "PT" << "\t" << data.ptrn << std::endl;
+    success = 1;
+  }
+  if (writeToServer) {
+    // http.sendOptionsAsync("https://lights.seansxyz.com/lights_apis/sync.php",
+    //                       data, DEVICE);
+    http.sendOptionsAsync("http://192.168.1.100/lights_apis/sync.php", data,
+                          DEVICE);
+  }
+  file.close();
+  return success;
+}
+
+std::vector<Schedule> readSchedule(std::string path1) {
+  std::string path = path1 + std::string("/schedule");
+  // Attempt to open the file for reading
+  std::vector<Schedule> data;
+  std::ifstream file(path);
+  if (!file.is_open()) {
+    std::cerr << "Failed to open the file. creating file now..." << std::endl;
+    std::vector<std::string> themes = {
+        "New Year's",        "Valentine's Day", "Dad's Birthday",
+        "St. Patrick's Day", "Sean's Birthday", "Easter",
+        "Memorial Day",      "Fourth of July",  "Mom & Dad's Anniversary",
+        "Mom's Birthday",    "Labor Day",       "Halloween",
+        "Thanksgiving",      "Christmas",       "Cops",
+        "Seahawks",          "Kraken",          "Mariners"};
+
+    for (int i = 0; i < themes.size(); i++) {
+      std::cout << i << std::endl;
+      Schedule d;
+      d.name = themes[i];
+      d.themeID = i + 1;
+      d.enabled = 0;
+      d.sDate = "01/01";
+      d.sTime = "00:00";
+      d.eDate = "01/01";
+      d.eTime = "00:00";
+      data.push_back(d);
+    }
+    writeSchedule(path1, data);
+    data.clear();
+    return readSchedule(path1);
+  }
+  // Read the file line by line
+  while (!file.eof()) {
+    Schedule d;
+    file >> d.name >> d.themeID >> d.enabled >> d.sDate >> d.sTime >> d.eDate >>
+        d.eTime;
+    std::replace(d.name.begin(), d.name.end(), '_', ' ');
+    data.push_back(d);
+  }
+
+  data.pop_back();
+  if (writeToServer) {
+    // http.sendSchedulesAsync("https://lights.seansxyz.com/lights_apis/sync.php",
+    //                         data, DEVICE);
+    http.sendSchedulesAsync("http://192.168.1.100/lights_apis/sync.php", data,
+                            DEVICE);
+  }
+  return data;
+}
+
+int writeSchedule(std::string path, std::vector<Schedule> data) {
+  path += std::string("/schedule");
+  std::cout << "Writing " << path << std::endl;
+  std::ofstream file(path);
+  int success = 0;
+  if (file.is_open()) {
+    const int len = data.size();
+    for (int i = 0; i < len; i++) {
+      Schedule d = data[i];
+      std::replace(d.name.begin(), d.name.end(), ' ', '_');
+      file << d.name << "\t" << d.themeID << "\t" << d.enabled << "\t"
+           << d.sDate << "\t" << d.sTime << "\t" << d.eDate << "\t" << d.eTime
+           << std::endl;
+    }
+    success = 1;
+  }
+
+  if (writeToServer) {
+    // http.sendSchedulesAsync("https://lights.seansxyz.com/lights_apis/sync.php",
+    //                         data, DEVICE);
+    http.sendSchedulesAsync("http://192.168.1.100/lights_apis/sync.php", data,
+                            DEVICE);
+  }
+  file.close();
+  return success;
+}
+
+GameInfo readNextGame(std::string path, std::string fileName) {
+  std::string fullPath = path + fileName;
+  // Attempt to open the file for reading
+  std::ifstream file(fullPath);
+  if (!file.is_open()) {
+    GameInfo bad;
+    bad.id = -1;
+    std::cerr << "Failed to open the file." << std::endl;
+    return bad;
+  }
+  GameInfo d;
+  file >> d.id >> d.gameState >> d.home >> d.away >> d.militaryTime >>
+      d.standardTime >> d.displayedDateTime >> d.dateTimeUTC >>
+      d.scheduledDate >> d.scoreHome >> d.scoreAway;
+
+  std::replace(d.home.begin(), d.home.end(), '_', ' ');
+  std::replace(d.away.begin(), d.away.end(), '_', ' ');
+  std::replace(d.standardTime.begin(), d.standardTime.end(), '_', ' ');
+  std::replace(d.displayedDateTime.begin(), d.displayedDateTime.end(), '_',
+               ' ');
+  std::replace(d.dateTimeUTC.begin(), d.dateTimeUTC.end(), '_', ' ');
+  std::replace(d.scheduledDate.begin(), d.scheduledDate.end(), '_', ' ');
+
+  return d;
+}
+
+int writeNextGame(std::string path, std::string fileName, GameInfo d) {
+  std::string fullPath = path + fileName;
+  std::cout << "Writing " << fullPath << std::endl;
+  std::ofstream file(fullPath);
+  int success = 0;
+  if (file.is_open()) {
+
+    std::replace(d.home.begin(), d.home.end(), ' ', '_');
+    std::replace(d.away.begin(), d.away.end(), ' ', '_');
+    std::replace(d.standardTime.begin(), d.standardTime.end(), ' ', '_');
+    std::replace(d.displayedDateTime.begin(), d.displayedDateTime.end(), ' ',
+                 '_');
+    std::replace(d.dateTimeUTC.begin(), d.dateTimeUTC.end(), ' ', '_');
+    std::replace(d.scheduledDate.begin(), d.scheduledDate.end(), ' ', '_');
+
+    file << d.id << "\t" << d.gameState << "\t" << d.home << "\t" << d.away
+         << "\t" << d.militaryTime << "\t" << d.standardTime << "\t"
+         << d.displayedDateTime << "\t" << d.dateTimeUTC << "\t"
+         << d.scheduledDate << "\t" << d.scoreHome << "\t" << d.scoreAway;
+    success = 1;
+  }
+  file.close();
+  return success;
+}
+
+static bool execSQL(sqlite3 *db, const char *sql) {
+  char *errMsg = nullptr;
+  int rc = sqlite3_exec(db, sql, nullptr, nullptr, &errMsg);
+  if (rc != SQLITE_OK) {
+    std::cerr << "SQLite error: " << (errMsg ? errMsg : "unknown") << "\n";
+    sqlite3_free(errMsg);
+    return false;
+  }
+  return true;
+}
+
+std::vector<Theme> readThemeColors(const std::string &path) {
+  const std::string dbPath = path + "/themes.db";
+  std::cout << dbPath << std::endl;
+  std::vector<Theme> out;
+  sqlite3 *db = nullptr;
+
+  if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
+    std::cerr << "Failed to open DB: " << dbPath << "\n";
+    if (db)
+      sqlite3_close(db);
+    return out;
+  }
+
+  const char *themeSql = R"(
+    SELECT id, name
+    FROM themes
+    ORDER BY id
+  )";
+
+  sqlite3_stmt *themeStmt = nullptr;
+  if (sqlite3_prepare_v2(db, themeSql, -1, &themeStmt, nullptr) != SQLITE_OK) {
+    std::cerr << "Failed to prepare theme query\n";
+    sqlite3_close(db);
+    return out;
+  }
+
+  while (sqlite3_step(themeStmt) == SQLITE_ROW) {
+    Theme t;
+    t.id = sqlite3_column_int(themeStmt, 0);
+
+    const unsigned char *nameText = sqlite3_column_text(themeStmt, 1);
+    t.name = nameText ? reinterpret_cast<const char *>(nameText) : "";
+
+    out.push_back(t);
+  }
+  sqlite3_finalize(themeStmt);
+
+  const char *colorSql = R"(
+    SELECT r, g, b
+    FROM theme_colors
+    WHERE theme_id = ?
+    ORDER BY color_index
+  )";
+
+  sqlite3_stmt *colorStmt = nullptr;
+  if (sqlite3_prepare_v2(db, colorSql, -1, &colorStmt, nullptr) != SQLITE_OK) {
+    std::cerr << "Failed to prepare color query\n";
+    sqlite3_close(db);
+    return out;
+  }
+
+  for (auto &theme : out) {
+    sqlite3_reset(colorStmt);
+    sqlite3_clear_bindings(colorStmt);
+    sqlite3_bind_int(colorStmt, 1, theme.id);
+
+    while (sqlite3_step(colorStmt) == SQLITE_ROW) {
+      RGB_Color c;
+      c.r = sqlite3_column_int(colorStmt, 0);
+      c.g = sqlite3_column_int(colorStmt, 1);
+      c.b = sqlite3_column_int(colorStmt, 2);
+      theme.colors.push_back(c);
+    }
+
+    if (theme.colors.empty()) {
+      theme.colors.push_back({255, 255, 255});
+    }
+  }
+
+  sqlite3_finalize(colorStmt);
+  sqlite3_close(db);
+  return out;
+}
+
+int writeThemeColors(const std::string &path,
+                     const std::vector<Theme> &themes) {
+  const std::string &dbPath = path + "/themes.db";
+  sqlite3 *db = nullptr;
+
+  if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
+    std::cerr << "Failed to open DB: " << dbPath << "\n";
+    if (db)
+      sqlite3_close(db);
+    return 0;
+  }
+
+  if (!execSQL(db, "BEGIN TRANSACTION;")) {
+    sqlite3_close(db);
+    return 0;
+  }
+
+  if (!execSQL(db, "DELETE FROM theme_colors;") ||
+      !execSQL(db, "DELETE FROM themes;")) {
+    execSQL(db, "ROLLBACK;");
+    sqlite3_close(db);
+    return 0;
+  }
+
+  const char *insertThemeSql = R"(
+    INSERT INTO themes (id, name)
+    VALUES (?, ?)
+  )";
+
+  const char *insertColorSql = R"(
+    INSERT INTO theme_colors (theme_id, color_index, r, g, b)
+    VALUES (?, ?, ?, ?, ?)
+  )";
+
+  sqlite3_stmt *themeStmt = nullptr;
+  sqlite3_stmt *colorStmt = nullptr;
+
+  if (sqlite3_prepare_v2(db, insertThemeSql, -1, &themeStmt, nullptr) !=
+          SQLITE_OK ||
+      sqlite3_prepare_v2(db, insertColorSql, -1, &colorStmt, nullptr) !=
+          SQLITE_OK) {
+    std::cerr << "Failed to prepare insert statements\n";
+    if (themeStmt)
+      sqlite3_finalize(themeStmt);
+    if (colorStmt)
+      sqlite3_finalize(colorStmt);
+    execSQL(db, "ROLLBACK;");
+    sqlite3_close(db);
+    return 0;
+  }
+
+  for (const auto &theme : themes) {
+    sqlite3_reset(themeStmt);
+    sqlite3_clear_bindings(themeStmt);
+
+    sqlite3_bind_int(themeStmt, 1, theme.id);
+    sqlite3_bind_text(themeStmt, 2, theme.name.c_str(), -1, SQLITE_TRANSIENT);
+
+    if (sqlite3_step(themeStmt) != SQLITE_DONE) {
+      std::cerr << "Failed inserting theme: " << theme.name << "\n";
+      sqlite3_finalize(themeStmt);
+      sqlite3_finalize(colorStmt);
+      execSQL(db, "ROLLBACK;");
+      sqlite3_close(db);
+      return 0;
+    }
+
+    for (int i = 0; i < static_cast<int>(theme.colors.size()); i++) {
+      const auto &c = theme.colors[i];
+
+      sqlite3_reset(colorStmt);
+      sqlite3_clear_bindings(colorStmt);
+
+      sqlite3_bind_int(colorStmt, 1, theme.id);
+      sqlite3_bind_int(colorStmt, 2, i);
+      sqlite3_bind_int(colorStmt, 3, c.r);
+      sqlite3_bind_int(colorStmt, 4, c.g);
+      sqlite3_bind_int(colorStmt, 5, c.b);
+
+      if (sqlite3_step(colorStmt) != SQLITE_DONE) {
+        std::cerr << "Failed inserting color for theme: " << theme.name << "\n";
+        sqlite3_finalize(themeStmt);
+        sqlite3_finalize(colorStmt);
+        execSQL(db, "ROLLBACK;");
+        sqlite3_close(db);
+        return 0;
+      }
+    }
+  }
+
+  sqlite3_finalize(themeStmt);
+  sqlite3_finalize(colorStmt);
+
+  int maxId = 0;
+  for (const auto &theme : themes) {
+    if (theme.id > maxId)
+      maxId = theme.id;
+  }
+
+  std::string seqSql =
+      "UPDATE sqlite_sequence SET seq = " + std::to_string(maxId) +
+      " WHERE name = 'themes';";
+
+  if (!execSQL(db, seqSql.c_str())) {
+    execSQL(db, "ROLLBACK;");
+    sqlite3_close(db);
+    return 0;
+  }
+
+  if (!execSQL(db, "COMMIT;")) {
+    execSQL(db, "ROLLBACK;");
+    sqlite3_close(db);
+    return 0;
+  }
+
+  sqlite3_close(db);
+  return 1;
+}
