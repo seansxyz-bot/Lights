@@ -74,6 +74,10 @@ public:
   ~HttpHelper();
 
   std::string get(const std::string &url) const;
+  std::vector<unsigned char> getBytes(const std::string &url) const; // NEW
+  bool downloadToFile(const std::string &url,
+                      const std::string &filePath) const; // NEW
+
   std::string postJson(const std::string &url, const json &payload) const;
 
   static json toJson(const LEDData &led);
@@ -104,23 +108,17 @@ public:
                       const std::vector<Schedule> &schedules,
                       const std::string &device = "") const;
 
-  // async wrappers
   void sendOptionsAsync(const std::string &url, Options opt,
                         std::string device = "") const;
-
   void sendLEDAsync(const std::string &url, LEDData led,
                     std::string device = "") const;
-
   void sendScheduleAsync(const std::string &url, Schedule sch,
                          std::string device = "") const;
-
   void sendLEDsAsync(const std::string &url, std::vector<LEDData> leds,
                      std::string device = "") const;
-
   void sendSchedulesAsync(const std::string &url,
                           std::vector<Schedule> schedules,
                           std::string device = "") const;
-
   void sendAllAsync(const std::string &url, Options opt,
                     std::vector<LEDData> leds, std::vector<Schedule> schedules,
                     std::string device = "") const;
@@ -128,4 +126,7 @@ public:
 private:
   static size_t writeCallback(void *contents, size_t size, size_t nmemb,
                               void *userp);
+
+  static size_t writeVectorCallback(void *contents, size_t size, size_t nmemb,
+                                    void *userp); // NEW
 };

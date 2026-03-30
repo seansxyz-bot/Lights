@@ -23,20 +23,23 @@ TeamList::TeamList(const std::string &iconPath, const std::string &teamsDbPath)
   m_scroll.set_min_content_height(500);
   m_scroll.set_min_content_width(900);
 
-  m_addBtn = Gtk::manage(new ImageButton(m_iconPath + "/editteams.png", 160));
+  auto addBtn = Gtk::manage(new Gtk::Button("Add Team"));
   m_cancelBtn = Gtk::manage(new ImageButton(m_iconPath + "/cancel.png", 96));
+
+  addBtn->set_halign(Gtk::ALIGN_CENTER);
+  addBtn->set_can_focus(false);
 
   m_bottomBox.set_spacing(20);
   m_bottomBox.set_halign(Gtk::ALIGN_CENTER);
-  m_bottomBox.pack_start(*m_addBtn, Gtk::PACK_SHRINK);
   m_bottomBox.pack_start(*m_cancelBtn, Gtk::PACK_SHRINK);
 
+  m_mainBox.pack_start(*addBtn, Gtk::PACK_SHRINK);
   m_mainBox.pack_start(m_scroll, Gtk::PACK_EXPAND_WIDGET);
   m_mainBox.pack_start(m_bottomBox, Gtk::PACK_SHRINK);
 
   pack_start(m_mainBox, Gtk::PACK_EXPAND_WIDGET);
 
-  m_addBtn->signal_clicked().connect(
+  addBtn->signal_clicked().connect(
       [this]() { m_signalAddTeamRequested.emit(); });
 
   m_cancelBtn->signal_clicked().connect([this]() { m_signalCancel.emit(); });
@@ -58,16 +61,14 @@ void TeamList::rebuild_rows() {
 
   for (const auto &team : m_teams) {
     auto row = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
-    row->set_spacing(10);
+    row->set_spacing(6);
     row->set_halign(Gtk::ALIGN_CENTER);
 
-    auto label = Gtk::manage(new Gtk::Label(team.name + "   [" + team.league +
-                                            "]   ID: " + team.apiTeamId));
+    auto label = Gtk::manage(new Gtk::Label(team.name));
     label->set_xalign(0.0f);
-    label->set_size_request(700, -1);
 
     auto editBtn =
-        Gtk::manage(new ImageButton(m_iconPath + "/editteams.png", 96));
+        Gtk::manage(new ImageButton(m_iconPath + "/settings.png", 96));
 
     editBtn->signal_clicked().connect(
         [this, team]() { m_signalEditTeamRequested.emit(team); });
@@ -77,6 +78,8 @@ void TeamList::rebuild_rows() {
 
     m_rowsBox.pack_start(*row, Gtk::PACK_SHRINK);
   }
+
+  m_rowsBox.show_all_children();
 }
 
 sigc::signal<void, TeamRecord> &TeamList::signal_edit_team_requested() {

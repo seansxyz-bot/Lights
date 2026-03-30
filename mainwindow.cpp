@@ -448,7 +448,7 @@ void MainWindow::createTeamListPage() {
     return;
 
   m_teamList = Gtk::manage(
-      new TeamList(ICON_PATH, std::string(SETTINGS_PATH) + "/themes.db"));
+      new TeamList(ICON_PATH, std::string(SETTINGS_PATH) + "/teams.db"));
 
   m_teamList->signal_cancel().connect([this]() {
     removeTeamListPage();
@@ -457,14 +457,11 @@ void MainWindow::createTeamListPage() {
 
   m_teamList->signal_add_team_requested().connect([this]() {
     TeamRecord blank;
-    createEditTeamPage(blank);
     showEditTeamPage(blank);
   });
 
-  m_teamList->signal_edit_team_requested().connect([this](TeamRecord team) {
-    createEditTeamPage(team);
-    showEditTeamPage(team);
-  });
+  m_teamList->signal_edit_team_requested().connect(
+      [this](TeamRecord team) { showEditTeamPage(team); });
 }
 
 void MainWindow::showTeamListPage() {
@@ -472,8 +469,13 @@ void MainWindow::showTeamListPage() {
 
   if (m_teamList)
     m_teamList->reload();
-  m_stack.add(*m_teamList, "team_list");
+
+  if (!m_stack.get_child_by_name("team_list"))
+    m_stack.add(*m_teamList, "team_list");
+
+  m_stack.show_all_children();
   m_stack.set_visible_child(*m_teamList);
+  m_stack.queue_draw();
 }
 
 void MainWindow::removeTeamListPage() {
@@ -503,11 +505,15 @@ void MainWindow::createEditTeamPage(const TeamRecord &team) {
   });
 
   m_stack.add(*m_editTeam, "edit_team");
+  m_editTeam->signal_validation_failed().connect(
+      [this](const std::string &msg) { m_toast.showMessage(msg); });
 }
 
 void MainWindow::showEditTeamPage(const TeamRecord &team) {
   createEditTeamPage(team);
+  m_stack.show_all_children();
   m_stack.set_visible_child(*m_editTeam);
+  m_stack.queue_draw();
 }
 
 void MainWindow::removeEditTeamPage() {
@@ -611,6 +617,10 @@ void MainWindow::destroyTemporaryPage(const std::string &pageName) {
     m_editThemesPage = nullptr;
   else if (pageName == "edit_theme")
     m_editThemePage = nullptr;
+  else if (pageName == "team_list")
+    m_teamList = nullptr;
+  else if (pageName == "edit_team")
+    m_editTeam = nullptr;
 }
 
 void MainWindow::destroyAllTemporaryPages() {

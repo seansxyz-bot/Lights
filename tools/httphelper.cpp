@@ -264,3 +264,71 @@ void HttpHelper::sendAllAsync(const std::string &url, Options opt,
     LOG_INFO() << "SYNC RESPONSE: " << response;
   }).detach();
 }
+
+size_t HttpHelper::writeVectorCallback(void *contents, size_t size,
+                                       size_t nmemb, void *userp) {
+  const size_t totalSize = size * nmemb;
+  auto *buffer = static_cast<std::vector<unsigned char> *>(userp);
+  auto *data = static_cast<unsigned char *>(contents);
+  buffer->insert(buffer->end(), data, data + totalSize);
+  return totalSize;
+}
+
+std::vector<unsigned char> HttpHelper::getBytes(const std::string &url) const {
+  CURL *curl = curl_easy_init();
+  std::vector<unsigned char> response;
+
+  if (!curl) {
+    std::cerr << "curl_easy_init() failed\n";
+    return response;
+  }
+
+  curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
+                   HttpHelper::writeVectorCallback);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+  curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+  curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+  curl_easy_setopt(curl, CURLOPT_USERAGENT, "LightingControl/1.0");
+  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
+
+  CURLcode res = curl_easy_perform(curl);
+
+  if (res != CURLE_OK) {
+    std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res)
+              << std::endl;
+    response.clear();
+  } else {
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    if (httpCode < 200 || httpCode >= 300) {
+      std::cerr << "HTTP GET failed with code " << httpCode << std::endl;
+      response.clear();
+    }
+  }
+
+  curl_easy_cleanup(curl);
+  return response;
+}
+
+bool HttpHelper::downloadToFile(const std::string &url,
+                                const std::string &filePath) const {
+  const auto data = getBytes(url);
+  if (data.empty())
+    return false;
+
+  std::ofstream out(filePath, std::ios::binary);
+  if (!out.is_open()) {
+    std::cerr << "Failed to open file for writing: " << filePath << std::endl;
+    return false;
+  }
+
+  out.write(reinterpret_cast<const char *>(data.data()),
+            static_cast<std::streamsize>(data.size()));
+
+  const bool ok = out.good();
+  out.close();
+  return ok;
+}

@@ -33,7 +33,6 @@ private:
   Gtk::Box m_rowsBox{Gtk::ORIENTATION_VERTICAL};
   Gtk::Box m_bottomBox{Gtk::ORIENTATION_HORIZONTAL};
 
-  ImageButton *m_addBtn = nullptr;
   ImageButton *m_cancelBtn = nullptr;
 
   sigc::signal<void, TeamRecord> m_signalEditTeamRequested;
