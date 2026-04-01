@@ -305,9 +305,6 @@ void MainWindow::showSettingsPage() {
   m_settingsPage->signal_bluetooth_toggled().connect(
       [this](bool enabled) { m_bluetoothState = enabled; });
 
-  m_settingsPage->signal_theme_control_requested().connect(
-      [this]() { showThemesPage(true); });
-
   m_settingsPage->signal_restart_requested().connect([this]() {
     if (m_settingsPage)
       m_settingsPage->set_restart_enabled(false);

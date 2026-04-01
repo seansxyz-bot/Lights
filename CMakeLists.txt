@@ -88,6 +88,7 @@ add_executable(LightingControl
     gui/toastmessage.h gui/toastmessage.cpp
     gui/teamlist.h gui/teamlist.cpp
     gui/editteam.h gui/editteam.cpp
+    tools/parserhelper.h tools/parserhelper.cpp
 
 )
 

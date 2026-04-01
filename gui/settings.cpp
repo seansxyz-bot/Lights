@@ -30,9 +30,6 @@ Settings::Settings(const std::string &iconPath, bool autoSensorOn,
   m_bluetoothBtn = Gtk::manage(new ImageButton(
       iconPath, "/bluetooth_off", "/bluetooth_on", m_bluetoothOn, 256));
 
-  m_themeControlBtn =
-      Gtk::manage(new ImageButton(iconPath + "/theme_control.png", 196));
-
   m_editThemeBtn = Gtk::manage(new ImageButton(iconPath + "/dt.png", 196));
 
   m_editTeamsBtn =
@@ -49,7 +46,6 @@ Settings::Settings(const std::string &iconPath, bool autoSensorOn,
   boxA->pack_start(*m_lightSwitchBtn, Gtk::PACK_SHRINK);
   boxA->pack_start(*m_bluetoothBtn, Gtk::PACK_SHRINK);
 
-  boxB->pack_start(*m_themeControlBtn, Gtk::PACK_SHRINK);
   boxB->pack_start(*m_editThemeBtn, Gtk::PACK_SHRINK);
   boxB->pack_start(*m_editTeamsBtn, Gtk::PACK_SHRINK);
 
@@ -78,9 +74,6 @@ Settings::Settings(const std::string &iconPath, bool autoSensorOn,
     m_bluetoothOn = !m_bluetoothOn;
     m_signalBluetoothToggled.emit(m_bluetoothOn);
   });
-
-  m_themeControlBtn->signal_clicked().connect(
-      [this]() { m_signalThemeControlRequested.emit(); });
 
   m_editThemeBtn->signal_clicked().connect(
       [this]() { m_signalEditThemeRequested.emit(); });
@@ -111,10 +104,6 @@ sigc::signal<void, bool> &Settings::signal_lights_toggled() {
 
 sigc::signal<void, bool> &Settings::signal_bluetooth_toggled() {
   return m_signalBluetoothToggled;
-}
-
-sigc::signal<void> &Settings::signal_theme_control_requested() {
-  return m_signalThemeControlRequested;
 }
 
 sigc::signal<void> &Settings::signal_edit_theme_requested() {

@@ -305,6 +305,28 @@ std::string EditTeam::normalizeTeamFileName(const std::string &name) {
   return s + "_logo.png";
 }
 
+std::string EditTeam::normalizeParserFileName(const std::string &name) {
+  std::string s = name;
+
+  // trim
+  const auto first = s.find_first_not_of(" \t\r\n");
+  if (first == std::string::npos)
+    return "";
+
+  const auto last = s.find_last_not_of(" \t\r\n");
+  s = s.substr(first, last - first + 1);
+
+  std::transform(s.begin(), s.end(), s.begin(),
+                 [](unsigned char c) { return std::tolower(c); });
+
+  for (char &c : s) {
+    if (c == ' ')
+      c = '_';
+  }
+
+  return s;
+}
+
 void EditTeam::updateLogoPreview(const Glib::RefPtr<Gdk::Pixbuf> &pixbuf) {
   m_logoPixbuf = pixbuf;
 
@@ -322,6 +344,7 @@ void EditTeam::updateLogoPreview(const Glib::RefPtr<Gdk::Pixbuf> &pixbuf) {
 void EditTeam::clearLogoPreview() {
   m_logoPixbuf.reset();
   m_logoPreview.clear();
+  m_logoUrlEntry.set_text("");
   showLogoEmpty();
   LOG_INFO() << "Cleared logo preview";
 }
@@ -459,9 +482,11 @@ void EditTeam::on_save() {
   m_team.league = m_leagueEntry.get_text();
   m_team.teamCode = m_teamCodeEntry.get_text();
   m_team.nextGameUrlTemplate = m_nextGameUrlEntry.get_text();
-  m_team.nextGameParser = m_nextGameParserEntry.get_text();
+  m_team.nextGameParser =
+      normalizeParserFileName(m_nextGameParserEntry.get_text());
   m_team.liveGameUrlTemplate = m_liveGameUrlEntry.get_text();
-  m_team.liveGameParser = m_liveGameParserEntry.get_text();
+  m_team.liveGameParser =
+      normalizeParserFileName(m_liveGameParserEntry.get_text());
   m_team.apiTeamId = m_apiTeamIdEntry.get_text();
   m_team.themeName = m_themeNameEntry.get_text();
   m_team.enabled = 1;
@@ -469,11 +494,12 @@ void EditTeam::on_save() {
   const bool teamOk = writeTeam(m_teamsDbPath, m_team);
   const bool colorsOk = saveThemeColorsByThemeName(
       m_team.themeName, m_color1Entry.get_text(), m_color2Entry.get_text());
-  const bool logoPreviewOk = saveLogoPreviewToDisk();
-  const bool logoUrlOk = saveLogoFromUrl(m_logoUrlEntry.get_text());
+  const bool logoOk = !m_logoUrlEntry.get_text().empty()
+                          ? saveLogoFromUrl(m_logoUrlEntry.get_text())
+                          : saveLogoPreviewToDisk();
 
-  if (teamOk && colorsOk && logoPreviewOk) {
-    if (!m_logoUrlEntry.get_text().empty() && !logoUrlOk) {
+  if (teamOk && colorsOk && logoOk) {
+    if (!m_logoUrlEntry.get_text().empty() && !logoOk) {
       LOG_WARN()
           << "Team saved, colors saved, preview saved, logo URL save failed";
     }

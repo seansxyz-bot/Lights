@@ -24,6 +24,7 @@ private:
 
   static bool hexToRgb(const std::string &hex, int &r, int &g, int &b);
   static std::string normalizeTeamFileName(const std::string &name);
+  static std::string normalizeParserFileName(const std::string &name);
 
   bool saveThemeColorsByThemeName(const std::string &themeName,
                                   const std::string &hex1,
