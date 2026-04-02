@@ -1,15 +1,24 @@
 #include "mainwindow.h"
 
+#include "engine/engine.h"
 #include "gui/deltaall.h"
 #include "gui/deltagroup.h"
-#include "gui/gamedayscreen.h"
 #include "gui/home.h"
 #include "gui/imgbutton.h"
 #include "gui/patterns.h"
 #include "gui/settings.h"
 #include "gui/themes.h"
 #include "tools/bme280.h"
-#include "tools/sportsschedules.h"
+#include "tools/httphelper.h"
+#include <chrono>
+#include <ctime>
+#include <gtkmm.h>
+#include <iomanip>
+#include <iostream>
+#include <random>
+#include <sstream>
+#include <string>
+#include <vector>
 
 #include <array>
 #include <iomanip>
@@ -174,8 +183,10 @@ void MainWindow::connectPageSignals() {
     m_homePage->signal_themes_requested().connect(
         [this]() { showThemesPage(false); });
 
-    m_homePage->signal_patterns_requested().connect(
-        [this]() { showPatternPage(); });
+    m_homePage->signal_patterns_requested().connect([this]() {
+      showGameDayPage();
+      // showPatternPage();
+    });
 
     m_homePage->signal_settings_requested().connect(
         [this]() { showSettingsPage(); });
@@ -559,21 +570,38 @@ void MainWindow::showGameDayPage() {
 
   destroyTemporaryPage("game_day");
 
-  // TeamRecord krakenInfo(SETTINGS_PATH, KRAKEN_FILE);
-  // GameInfo gameInfo = readNextGame(SETTINGS_PATH, KRAKEN_FILE);
+  TeamRecord team;
+  team.name = "OpenGL Test Cube";
+  team.c1.set_rgba(0.20, 0.70, 1.00, 1.0);
+  team.c2.set_rgba(0.18, 0.18, 0.24, 1.0);
 
-  // m_gameDayPage = Gtk::manage(new GameDayScreen(krakenInfo, gameInfo));
-  m_gameDayPage->start_animation();
+  TeamStats stats;
+  stats.ranking = 1;
+  stats.wins = 99;
+  stats.losses = 1;
+  stats.recordText = "99-1";
+
+  GameInfo gameInfo;
+  gameInfo.home = "CUBE";
+  gameInfo.away = "GTK";
+  gameInfo.venue = "MainWindow Arena";
+
+  m_gameDayPage = Gtk::manage(new Engine(team, stats, gameInfo));
+  m_gameDayPage->start();
 
   const bool returnToClock = m_clockVisible;
 
   m_stack.add(*m_gameDayPage, "game_day");
   showPage("game_day");
+  m_stack.add(*m_gameDayPage, "game_day");
+  m_stack.set_visible_child(*m_gameDayPage);
+  m_stack.show_all_children();
+  show_all_children();
 
   Glib::signal_timeout().connect_seconds(
       [this, returnToClock]() -> bool {
         if (m_gameDayPage)
-          m_gameDayPage->stop_animation();
+          m_gameDayPage->stop();
 
         destroyTemporaryPage("game_day");
 
@@ -749,30 +777,6 @@ void MainWindow::refreshNextKrakenGame() {
   if (m_schedule.size() <= 16) {
     LOG_ERROR() << "Schedule does not contain entry 16 for Kraken game";
     return;
-  }
-
-  LOG_INFO() << "Refreshing next Kraken game";
-  SportsSchedules schedule;
-  GameInfo krakenGame = schedule.getNextGame(THE_KRAKEN);
-  // GameInfo marinersGame = schedule.getNextGame(THE_MARINERS);
-
-  // more screens for 2+games in a day and combos, double header for the
-  // Mariners, hockey and football....
-
-  m_schedule[16].sDate = krakenGame.scheduledDate;
-  m_schedule[16].eDate = krakenGame.scheduledDate;
-  m_schedule[16].sTime = krakenGame.militaryTime;
-  m_schedule[16].eTime = addHours(krakenGame.militaryTime, 3);
-
-  // writeNextGame(SETTINGS_PATH, KRAKEN_FILE, krakenGame);
-  writeSchedule(SETTINGS_PATH, m_schedule);
-
-  LOG_INFO() << "Kraken game updated. date=" << krakenGame.scheduledDate
-             << " time=" << krakenGame.militaryTime;
-
-  if (isGameDay(krakenGame.scheduledDate)) {
-    LOG_INFO() << "Kraken game is today. Scheduling event.";
-    ClockThread::instance().setSchedules(m_schedule);
   }
 }
 

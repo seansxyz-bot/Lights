@@ -35,7 +35,7 @@ class Themes;
 class Patterns;
 class DeltaAll;
 class DeltaGroup;
-class GameDayScreen;
+class Engine;
 class EditThemes;
 class EditThemePage;
 
@@ -70,7 +70,7 @@ private:
   DeltaGroup *m_deltaGroupPage = nullptr;
   Themes *m_themesPage = nullptr;
   Patterns *m_patternPage = nullptr;
-  GameDayScreen *m_gameDayPage = nullptr;
+  Engine *m_gameDayPage = nullptr;
   EditThemes *m_editThemesPage = nullptr;
   EditThemePage *m_editThemePage = nullptr;
   TeamList *m_teamList = nullptr;

@@ -59,6 +59,27 @@ struct TeamRecord {
   Gdk::RGBA c2;
 };
 
+struct TeamStats {
+  int ranking = 0;
+
+  int divisionRank = 0;
+  int conferenceRank = 0;
+
+  int wins = 0;
+  int losses = 0;
+  int draws = 0;
+  int overtimeLosses = 0;
+
+  int points = 0;
+  double winPct = 0.0;
+
+  std::string conference;
+  std::string division;
+  std::string streak;
+  std::string seasonLabel;
+  std::string recordText;
+};
+
 struct GameInfo {
   int id;
   std::string gameState;
@@ -70,9 +91,15 @@ struct GameInfo {
   std::string displayedDateTime; // MM-DD @ HH:MM am/pm
   std::string dateTimeUTC;       // orignal time string
   std::string scheduledDate;     // MM/DD
-
+  std::string venue;
   std::string scoreHome;
   std::string scoreAway;
+
+  bool isHomeGame = false;
+  bool isPlayoffGame = false;
+
+  std::string opponentCode;
+  std::string opponentName;
 };
 
 std::vector<LEDData> readLEDInfo(std::string path);
