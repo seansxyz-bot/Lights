@@ -94,7 +94,9 @@ void MainWindow::startConnections() {
           refreshTodayGameSchedules();
         }
 
-        if (m_schedule.size() > 16 && isGameDay(m_schedule[16].sDate)) {
+        auto activeSports = getActiveSportsSchedules();
+
+        if (!activeSports.empty()) {
           LOG_INFO()
               << "Today is game day from schedule entry 16. Showing GameDay.";
           showGameDayPage();
@@ -773,6 +775,23 @@ void MainWindow::onScheduleEnded(const Schedule &schedules) {
   // turn off theme and pattern
 }
 
+std::string normalizeTeamFileName(const std::string &name) {
+  std::string s = name;
+
+  std::transform(s.begin(), s.end(), s.begin(),
+                 [](unsigned char c) { return std::tolower(c); });
+
+  if (s.rfind("the ", 0) == 0)
+    s.erase(0, 4);
+
+  for (char &c : s) {
+    if (c == ' ')
+      c = '_';
+  }
+
+  return s + "_logo.png";
+}
+
 void MainWindow::refreshTodayGameSchedules() {
   LOG_INFO() << "refreshTodayGameSchedules begin";
 
@@ -784,7 +803,6 @@ void MainWindow::refreshTodayGameSchedules() {
     LOG_WARN() << "No teams found in " << teamsDbPath;
     writeSchedule(settingsPath, m_schedule);
     ClockThread::instance().setSchedules(m_schedule);
-    return;
   }
 
   auto replaceAll = [](std::string text, const std::string &from,
@@ -1004,6 +1022,61 @@ void MainWindow::refreshTodayGameSchedules() {
 
   LOG_INFO() << "refreshTodayGameSchedules complete. schedule_entries="
              << m_schedule.size();
+}
+
+void removeOldTeamSchedules(std::vector<Schedule> &list,
+                            const std::vector<TeamRecord> &teams) {
+  std::set<std::string> valid;
+
+  for (const auto &t : teams) {
+    valid.insert("TEAM_" + normalizeTeamFileName(t.name));
+  }
+
+  list.erase(std::remove_if(list.begin(), list.end(),
+                            [&](const Schedule &s) {
+                              if (s.name.rfind("TEAM_", 0) != 0)
+                                return false;
+                              return valid.find(s.name) == valid.end();
+                            }),
+             list.end());
+}
+
+std::vector<Schedule> MainWindow::getActiveSportsSchedules() {
+  std::vector<Schedule> result;
+
+  auto active = ClockThread::instance().activeSchedulesSnapshot();
+
+  for (const auto &s : active) {
+    // You NEED a reliable way to identify sports schedules
+    // Option 1 (recommended): prefix name
+    // Option 2: add a flag later
+
+    if (s.name.rfind("TEAM_", 0) == 0) { // starts with "TEAM_"
+      result.push_back(s);
+    }
+  }
+
+  return result;
+}
+
+int findScheduleIndexByName(const std::vector<Schedule> &list,
+                            const std::string &name) {
+  for (size_t i = 0; i < list.size(); ++i) {
+    if (list[i].name == name) {
+      return static_cast<int>(i);
+    }
+  }
+  return -1;
+}
+
+void upsertSchedule(std::vector<Schedule> &list, const Schedule &newSchedule) {
+  int idx = findScheduleIndexByName(list, newSchedule.name);
+
+  if (idx >= 0) {
+    list[idx] = newSchedule; // ✅ update
+  } else {
+    list.push_back(newSchedule); // ✅ insert
+  }
 }
 
 bool MainWindow::isGameDay(const std::string &date) {

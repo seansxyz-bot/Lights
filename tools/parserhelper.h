@@ -6,18 +6,37 @@
 #include "settingsrw.h"
 
 struct ParserConfig {
-  std::string type;   // "json"
-  std::string mode;   // "next_game"
-  std::string root;   // e.g. "games"
-  std::string select; // e.g. "first"
+  std::string name;
+  std::string type; // json, xml
+  std::string mode; // next_game, live_game
+  std::string root;
+  std::string select;
 
-  std::string fieldId;
-  std::string fieldGameState;
-  std::string fieldDateTimeUTC;
-  std::string fieldHome;
-  std::string fieldAway;
-  std::string fieldScoreHome;
-  std::string fieldScoreAway;
+  std::map<std::string, std::string> fields;
+};
+
+struct ParsedNextGame {
+  bool valid = false;
+  std::string id;
+  std::string state;
+  std::string dateUtc;
+  std::string homeTeam;
+  std::string awayTeam;
+  int homeScore = 0;
+  int awayScore = 0;
+};
+
+struct ParsedLiveGame {
+  bool valid = false;
+  std::string id;
+  std::string state;
+  std::string dateUtc;
+  std::string homeTeam;
+  std::string awayTeam;
+  int homeScore = 0;
+  int awayScore = 0;
+  std::string period;
+  std::string clock;
 };
 
 class ParserHelper {
@@ -26,10 +45,6 @@ public:
 
   static std::string parserFilePath(const std::string &settingsPath,
                                     const std::string &parserName);
-
-  static bool loadParserConfig(const std::string &settingsPath,
-                               const std::string &parserName,
-                               ParserConfig &config);
 
   static bool parseNextGameJson(const std::string &jsonText,
                                 const ParserConfig &config, GameInfo &game);
@@ -40,4 +55,15 @@ private:
 
   static int getIntByPath(const nlohmann::json &j, const std::string &path,
                           int fallback = 0);
+
+  bool loadParserConfig(const std::string &settingsPath,
+                        const std::string &parserName, ParserConfig &outConfig);
+
+  bool validateParserConfig(const ParserConfig &cfg, std::string &error);
+
+  bool parseNextGameJson(const std::string &payload, const ParserConfig &cfg,
+                         ParsedNextGame &outGame, std::string &error);
+
+  bool parseLiveGameJson(const std::string &payload, const ParserConfig &cfg,
+                         ParsedLiveGame &outGame, std::string &error);
 };

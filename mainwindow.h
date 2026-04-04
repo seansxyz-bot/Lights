@@ -144,6 +144,7 @@ private:
   void onScheduleStarted(const Schedule &schedules);
   void onScheduleEnded(const Schedule &schedules);
   void refreshTodayGameSchedules();
+  std::vector<Schedule> getActiveSportsSchedules();
   bool isGameDay(const std::string &date);
   std::string addHours(const std::string &time24, int hours);
   void onDoorbellChanged(bool pressed);
