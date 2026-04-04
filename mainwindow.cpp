@@ -25,6 +25,8 @@
 #include <sstream>
 #include <string>
 
+// showGameDayPage();  // use later for animation
+
 MainWindow::MainWindow() {
   Logger::useStdOutAndFile(LOG_FILE_MSTR, true);
   LOG_INFO() << "Logger initialized";
@@ -48,6 +50,8 @@ MainWindow::MainWindow() {
   resetIdleClockTimer();
 
   LOG_INFO() << "MainWindow ctor complete";
+
+  refreshTodayGameSchedules();
 }
 
 void MainWindow::loadSettings() {
@@ -87,7 +91,7 @@ void MainWindow::startConnections() {
         LOG_INFO() << "Top of the hour: " << hour;
 
         if (hour == 0) {
-          refreshNextKrakenGame();
+          refreshTodayGameSchedules();
         }
 
         if (m_schedule.size() > 16 && isGameDay(m_schedule[16].sDate)) {
@@ -133,8 +137,6 @@ void MainWindow::buildShell() {
 
 void MainWindow::buildOverlay() {
   LOG_INFO() << "Building overlay";
-
-  m_overlay.add(m_stack);
 
   m_overlay.add(m_stack);
   m_overlay.add_overlay(m_toast);
@@ -183,10 +185,8 @@ void MainWindow::connectPageSignals() {
     m_homePage->signal_themes_requested().connect(
         [this]() { showThemesPage(false); });
 
-    m_homePage->signal_patterns_requested().connect([this]() {
-      showGameDayPage();
-      // showPatternPage();
-    });
+    m_homePage->signal_patterns_requested().connect(
+        [this]() { showPatternPage(); });
 
     m_homePage->signal_settings_requested().connect(
         [this]() { showSettingsPage(); });
@@ -773,11 +773,237 @@ void MainWindow::onScheduleEnded(const Schedule &schedules) {
   // turn off theme and pattern
 }
 
-void MainWindow::refreshNextKrakenGame() {
-  if (m_schedule.size() <= 16) {
-    LOG_ERROR() << "Schedule does not contain entry 16 for Kraken game";
+void MainWindow::refreshTodayGameSchedules() {
+  LOG_INFO() << "refreshTodayGameSchedules begin";
+
+  const std::string settingsPath = std::string(SETTINGS_PATH);
+  const std::string teamsDbPath = settingsPath + "/teams.db";
+
+  auto teams = readTeams(teamsDbPath);
+  if (teams.empty()) {
+    LOG_WARN() << "No teams found in " << teamsDbPath;
+    writeSchedule(settingsPath, m_schedule);
+    ClockThread::instance().setSchedules(m_schedule);
     return;
   }
+
+  auto replaceAll = [](std::string text, const std::string &from,
+                       const std::string &to) -> std::string {
+    if (from.empty())
+      return text;
+
+    std::size_t pos = 0;
+    while ((pos = text.find(from, pos)) != std::string::npos) {
+      text.replace(pos, from.size(), to);
+      pos += to.size();
+    }
+    return text;
+  };
+
+  auto buildUrlFromTemplate = [&](const TeamRecord &team) -> std::string {
+    std::string url = team.nextGameUrlTemplate;
+
+    // Support a few common placeholder styles so the DB/templates can be
+    // flexible.
+    url = replaceAll(url, "{teamId}", team.apiTeamId);
+    url = replaceAll(url, "{TEAM_ID}", team.apiTeamId);
+    url = replaceAll(url, "%TEAM_ID%", team.apiTeamId);
+
+    url = replaceAll(url, "{teamCode}", team.teamCode);
+    url = replaceAll(url, "{TEAM_CODE}", team.teamCode);
+    url = replaceAll(url, "%TEAM_CODE%", team.teamCode);
+
+    return url;
+  };
+
+  auto findThemeIdByName = [&](const std::string &themeName) -> int {
+    for (const auto &theme : m_themes) {
+      if (theme.name == themeName)
+        return theme.id;
+    }
+    return 0;
+  };
+
+  auto findScheduleIndexByName = [&](const std::string &name) -> int {
+    for (std::size_t i = 0; i < m_schedule.size(); ++i) {
+      if (m_schedule[i].name == name)
+        return static_cast<int>(i);
+    }
+    return -1;
+  };
+
+  auto formatMmDd = [](const std::tm &tmLocal) -> std::string {
+    char buf[16];
+    std::strftime(buf, sizeof(buf), "%m/%d", &tmLocal);
+    return buf;
+  };
+
+  auto formatHhMm = [](const std::tm &tmLocal) -> std::string {
+    char buf[16];
+    std::strftime(buf, sizeof(buf), "%H:%M", &tmLocal);
+    return buf;
+  };
+
+  auto utcToLocalTm = [](const std::string &utcIso, std::tm &outLocal) -> bool {
+    // Expected shape like: 2025-03-29T19:00:00Z
+    std::tm tmUtc{};
+    std::istringstream ss(utcIso);
+    ss >> std::get_time(&tmUtc, "%Y-%m-%dT%H:%M:%SZ");
+    if (ss.fail())
+      return false;
+
+#if defined(_GNU_SOURCE) || defined(__USE_MISC) || defined(__APPLE__)
+    std::time_t utcEpoch = timegm(&tmUtc);
+#else
+    // Fallback if timegm is unavailable.
+    // Temporarily interpret as local, then compensate using local-vs-gmt
+    // offset.
+    std::time_t localGuess = std::mktime(&tmUtc);
+    std::tm gmtFromGuess = *std::gmtime(&localGuess);
+    std::time_t gmtAsLocal = std::mktime(&gmtFromGuess);
+    std::time_t utcEpoch = localGuess + (localGuess - gmtAsLocal);
+#endif
+
+    if (utcEpoch == static_cast<std::time_t>(-1))
+      return false;
+
+    std::tm *localPtr = std::localtime(&utcEpoch);
+    if (!localPtr)
+      return false;
+
+    outLocal = *localPtr;
+    return true;
+  };
+
+  auto todayLocalMmDd = [&]() -> std::string {
+    std::time_t now = std::time(nullptr);
+    std::tm *localNow = std::localtime(&now);
+    if (!localNow)
+      return "";
+    return formatMmDd(*localNow);
+  }();
+
+  // We update existing schedule entries by theme-name when possible.
+  // If a team schedule does not exist yet, we append it.
+  for (const auto &team : teams) {
+    if (!team.enabled) {
+      LOG_INFO() << "Skipping disabled team: " << team.name;
+      continue;
+    }
+
+    const std::string scheduleName =
+        !team.themeName.empty() ? team.themeName : team.name;
+
+    const int themeId =
+        !team.themeName.empty() ? findThemeIdByName(team.themeName) : 0;
+
+    int scheduleIndex = findScheduleIndexByName(scheduleName);
+    if (scheduleIndex < 0) {
+      Schedule fresh;
+      fresh.name = scheduleName;
+      fresh.themeID = themeId;
+      fresh.enabled = 0;
+      fresh.sDate = "01/01";
+      fresh.sTime = "00:00";
+      fresh.eDate = "01/01";
+      fresh.eTime = "00:00";
+      m_schedule.push_back(fresh);
+      scheduleIndex = static_cast<int>(m_schedule.size()) - 1;
+      LOG_INFO() << "Created new schedule slot for " << scheduleName;
+    }
+
+    Schedule entry = m_schedule[scheduleIndex];
+    entry.name = scheduleName;
+    if (themeId > 0)
+      entry.themeID = themeId;
+
+    if (team.nextGameUrlTemplate.empty() || team.nextGameParser.empty()) {
+      LOG_WARN() << "Team missing next-game config: " << team.name;
+      entry.enabled = 0;
+      m_schedule[scheduleIndex] = entry;
+      continue;
+    }
+
+    const std::string url = buildUrlFromTemplate(team);
+    if (url.empty()) {
+      LOG_WARN() << "Built empty next-game URL for team: " << team.name;
+      entry.enabled = 0;
+      m_schedule[scheduleIndex] = entry;
+      continue;
+    }
+
+    LOG_INFO() << "Fetching next game for " << team.name << " from " << url;
+
+    const std::string body = http.get(url);
+    if (body.empty()) {
+      LOG_WARN() << "Empty HTTP response for team: " << team.name;
+      entry.enabled = 0;
+      m_schedule[scheduleIndex] = entry;
+      continue;
+    }
+
+    ParserConfig parserConfig;
+    if (!ParserHelper::loadParserConfig(settingsPath, team.nextGameParser,
+                                        parserConfig)) {
+      LOG_ERROR() << "Failed loading parser '" << team.nextGameParser
+                  << "' for team: " << team.name;
+      entry.enabled = 0;
+      m_schedule[scheduleIndex] = entry;
+      continue;
+    }
+
+    GameInfo game;
+    if (!ParserHelper::parseNextGameJson(body, parserConfig, game)) {
+      LOG_WARN() << "Failed parsing next game for team: " << team.name;
+      entry.enabled = 0;
+      m_schedule[scheduleIndex] = entry;
+      continue;
+    }
+
+    std::tm localGameTm{};
+    if (!utcToLocalTm(game.dateTimeUTC, localGameTm)) {
+      LOG_WARN() << "Could not convert UTC time for team: " << team.name
+                 << " utc=" << game.dateTimeUTC;
+      entry.enabled = 0;
+      m_schedule[scheduleIndex] = entry;
+      continue;
+    }
+
+    game.scheduledDate = formatMmDd(localGameTm);
+    game.militaryTime = formatHhMm(localGameTm);
+
+    const bool isToday = (game.scheduledDate == todayLocalMmDd);
+
+    if (!isToday) {
+      LOG_INFO() << "No game today for " << team.name << " next game is on "
+                 << game.scheduledDate;
+      entry.enabled = 0;
+      entry.sDate = game.scheduledDate;
+      entry.sTime = game.militaryTime;
+      entry.eDate = game.scheduledDate;
+      entry.eTime = addHours(game.militaryTime, 3);
+      m_schedule[scheduleIndex] = entry;
+      continue;
+    }
+
+    entry.enabled = 1;
+    entry.sDate = game.scheduledDate;
+    entry.sTime = game.militaryTime;
+    entry.eDate = game.scheduledDate;
+    entry.eTime = addHours(game.militaryTime, 3);
+
+    LOG_INFO() << "Game today for " << team.name << " start=" << entry.sDate
+               << " " << entry.sTime << " end=" << entry.eDate << " "
+               << entry.eTime << " theme=" << entry.themeID;
+
+    m_schedule[scheduleIndex] = entry;
+  }
+
+  writeSchedule(settingsPath, m_schedule);
+  ClockThread::instance().setSchedules(m_schedule);
+
+  LOG_INFO() << "refreshTodayGameSchedules complete. schedule_entries="
+             << m_schedule.size();
 }
 
 bool MainWindow::isGameDay(const std::string &date) {

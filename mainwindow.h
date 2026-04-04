@@ -25,6 +25,7 @@
 #include "threads/doorbellthread.h"
 #include "threads/mobilelightspoller.h"
 #include "tools/gpiohelper.h"
+#include "tools/parserhelper.h"
 #include "tools/powerswitch.h"
 #include <gtkmm.h>
 #include <string>
@@ -142,7 +143,7 @@ private:
   // ---------- schedules / sports ----------
   void onScheduleStarted(const Schedule &schedules);
   void onScheduleEnded(const Schedule &schedules);
-  void refreshNextKrakenGame();
+  void refreshTodayGameSchedules();
   bool isGameDay(const std::string &date);
   std::string addHours(const std::string &time24, int hours);
   void onDoorbellChanged(bool pressed);
