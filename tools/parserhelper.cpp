@@ -64,13 +64,13 @@ bool ParserHelper::loadParserConfig(const std::string &settingsPath,
     }
 
     const auto &fields = j.at("fields");
-    config.fieldId = fields.value("id", "");
-    config.fieldGameState = fields.value("gameState", "");
-    config.fieldDateTimeUTC = fields.value("dateTimeUTC", "");
-    config.fieldHome = fields.value("home", "");
-    config.fieldAway = fields.value("away", "");
-    config.fieldScoreHome = fields.value("scoreHome", "");
-    config.fieldScoreAway = fields.value("scoreAway", "");
+    // config.fieldId = fields.value("id", "");
+    // config.fieldGameState = fields.value("gameState", "");
+    // config.fieldDateTimeUTC = fields.value("dateTimeUTC", "");
+    // config.fieldHome = fields.value("home", "");
+    // config.fieldAway = fields.value("away", "");
+    // config.fieldScoreHome = fields.value("scoreHome", "");
+    // config.fieldScoreAway = fields.value("scoreAway", "");
 
     if (config.type != "json") {
       LOG_ERROR() << "Unsupported parser type: " << config.type;
@@ -98,6 +98,22 @@ bool ParserHelper::loadParserConfig(const std::string &settingsPath,
     return false;
   }
 }
+
+// bool ParserHelper::parseNextGame(const std::string &payload,
+//                                  const ParserConfig &cfg,
+//                                  ParsedNextGame &out,
+//                                  std::string &error) {
+//     if (cfg.type == "json" && cfg.mode == "next_game") {
+//         return parseNextGameJson(payload, cfg, out, error);
+//     }
+
+//     if (cfg.type == "xml" && cfg.mode == "next_game") {
+//         return parseNextGameXml(payload, cfg, out, error);
+//     }
+
+//     error = "Unsupported parser type/mode: " + cfg.type + "/" + cfg.mode;
+//     return false;
+// }
 
 std::string ParserHelper::getStringByPath(const nlohmann::json &j,
                                           const std::string &path) {
