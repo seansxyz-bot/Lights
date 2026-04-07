@@ -10,7 +10,7 @@
 #include <gtkmm.h>
 
 // Adjust this include path if your Schedule struct lives somewhere else.
-#include "../tools/settingsrw.h"
+#include "../tools/readerwriter.h"
 
 class ClockThread {
 public:

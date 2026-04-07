@@ -24,11 +24,16 @@
 #include "gui/toastmessage.h"
 #include "threads/doorbellthread.h"
 #include "threads/mobilelightspoller.h"
+#include "tools/bluezagent.h"
+#include "tools/btcontrol.h"
 #include "tools/gpiohelper.h"
 #include "tools/parserhelper.h"
 #include "tools/powerswitch.h"
+#include <atomic>
 #include <gtkmm.h>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 class Home;
@@ -39,6 +44,8 @@ class DeltaGroup;
 class Engine;
 class EditThemes;
 class EditThemePage;
+
+enum class LedOverrideMode { None, Theme, LightShow };
 
 class MainWindow : public Gtk::Window {
 public:
@@ -51,11 +58,14 @@ private:
   Options m_options;
   std::vector<Schedule> m_schedule;
   std::vector<Theme> m_themes;
+  std::string m_lastShortToastMessage;
 
   PowerSwitch m_powerThread;
   int m_groupSelection = 0;
   int m_bluetoothState = 0;
   GPIOHelper gpio;
+  BTControl m_btControl;
+  BluezAgent m_bluezAgent;
 
   // ---------- main shell ----------
   Gtk::Overlay m_overlay;
@@ -76,6 +86,14 @@ private:
   EditThemePage *m_editThemePage = nullptr;
   TeamList *m_teamList = nullptr;
   EditTeam *m_editTeam = nullptr;
+  std::atomic<bool> m_btBusy{false};
+  std::thread m_btWorker;
+  Glib::Dispatcher m_btUiDispatcher;
+
+  std::mutex m_btResultMutex;
+  bool m_btResultEnabled = false;
+  bool m_btResultSuccess = false;
+  std::string m_btResultToast;
 
   // ---------- restart toast ----------
   ToastMessage m_toast;
@@ -98,6 +116,8 @@ private:
   sigc::connection m_newMinuteConn;
   sigc::connection m_scheduledEventConn;
   sigc::connection m_doorbellConn;
+  sigc::connection m_bluetoothPollConn;
+  sigc::connection m_toastHideConn;
 
 private:
   // ---------- setup ----------
@@ -112,6 +132,13 @@ private:
   void onMobileOptionsChanged(const Options &options);
   void onMobileLEDsChanged(const std::vector<LEDData> &ledInfo);
   void onMobileSchedulesChanged(const std::vector<Schedule> &schedule);
+  void setBluetoothEnabled(bool enabled);
+  void disconnectAllBluetoothDevices();
+  bool onBluetoothPollTick();
+  void stopBluetoothPolling();
+  void startBluetoothTransition(bool enable);
+  void onBluetoothWorkerFinished();
+  void setBluetoothButtonEnabled(bool enabled);
 
   // ---------- navigation ----------
   void showPage(const std::string &pageName);
@@ -126,6 +153,7 @@ private:
 
   void destroyTemporaryPage(const std::string &pageName);
   void destroyAllTemporaryPages();
+  void showShortToast(const std::string &message);
 
   // ---------- idle / screensaver ----------
   void resetIdleClockTimer();
@@ -143,7 +171,6 @@ private:
   // ---------- schedules / sports ----------
   void onScheduleStarted(const Schedule &schedules);
   void onScheduleEnded(const Schedule &schedules);
-  void refreshTodayGameSchedules();
   std::vector<Schedule> getActiveSportsSchedules();
   bool isGameDay(const std::string &date);
   std::string addHours(const std::string &time24, int hours);

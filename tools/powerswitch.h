@@ -4,7 +4,7 @@
 #define TEENSY_SWITCH 9
 
 #include "powerswitch.h"
-#include "settingsrw.h"
+#include "readerwriter.h"
 
 #include <atomic>
 #include <condition_variable>

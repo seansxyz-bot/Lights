@@ -12,9 +12,9 @@
 
 #define NUM_OF_LEDS 19
 
-#include "../tools/parserhelper.h"
 #include "fstream"
 #include "iostream"
+#include "parserhelper.h"
 #include <atomic>
 #include <gdk/gdk.h>
 #include <sstream>
@@ -80,28 +80,6 @@ struct TeamStats {
   std::string streak;
   std::string seasonLabel;
   std::string recordText;
-};
-
-struct GameInfo {
-  int id;
-  std::string gameState;
-
-  std::string home;
-  std::string away;
-  std::string militaryTime;      // 24 Hour
-  std::string standardTime;      // 12 Hour
-  std::string displayedDateTime; // MM-DD @ HH:MM am/pm
-  std::string dateTimeUTC;       // orignal time string
-  std::string scheduledDate;     // MM/DD
-  std::string venue;
-  std::string scoreHome;
-  std::string scoreAway;
-
-  bool isHomeGame = false;
-  bool isPlayoffGame = false;
-
-  std::string opponentCode;
-  std::string opponentName;
 };
 
 std::vector<LEDData> readLEDInfo(std::string path);

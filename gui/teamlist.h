@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "../tools/settingsrw.h"
+#include "../tools/readerwriter.h"
 
 class ImageButton;
 

@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "../tools/settingsrw.h"
+#include "../tools/readerwriter.h"
 #include "colorwheelpicker.h"
 
 class ImageButton;

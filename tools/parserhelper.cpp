@@ -214,13 +214,13 @@ bool ParserHelper::parseNextGameJson(const std::string &jsonText,
     }
 
     game = GameInfo{};
-    game.id = getIntByPath(*item, config.fieldId);
-    game.gameState = getStringByPath(*item, config.fieldGameState);
-    game.dateTimeUTC = getStringByPath(*item, config.fieldDateTimeUTC);
-    game.home = getStringByPath(*item, config.fieldHome);
-    game.away = getStringByPath(*item, config.fieldAway);
-    game.scoreHome = getIntByPath(*item, config.fieldScoreHome, 0);
-    game.scoreAway = getIntByPath(*item, config.fieldScoreAway, 0);
+    // game.id = getIntByPath(*item, config.fieldId);
+    // game.gameState = getStringByPath(*item, config.fieldGameState);
+    // game.dateTimeUTC = getStringByPath(*item, config.fieldDateTimeUTC);
+    // game.home = getStringByPath(*item, config.fieldHome);
+    // game.away = getStringByPath(*item, config.fieldAway);
+    // game.scoreHome = getIntByPath(*item, config.fieldScoreHome, 0);
+    // game.scoreAway = getIntByPath(*item, config.fieldScoreAway, 0);
 
     if (game.dateTimeUTC.empty()) {
       LOG_ERROR() << "Parsed game missing dateTimeUTC";

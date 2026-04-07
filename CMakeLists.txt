@@ -72,7 +72,7 @@ set(SOURCES
     tools/logger.h
     tools/parserhelper.h
     tools/powerswitch.h
-    tools/settingsrw.h
+    tools/readerwriter.h
 
     # --------------------
     # SOURCES (.cpp / .c)
@@ -108,10 +108,14 @@ set(SOURCES
     tools/httphelper.cpp
     tools/parserhelper.cpp
     tools/powerswitch.cpp
-    tools/settingsrw.cpp
+    tools/readerwriter.cpp
 )
 
-add_executable(LightingControl ${SOURCES})
+add_executable(LightingControl ${SOURCES}
+    tools/btcontrol.h tools/btcontrol.cpp
+    tools/bluezagent.h tools/bluezagent.cpp
+    tools/lightshow.h tools/lightshow.cpp
+    tools/lightshow.h tools/lightshow.cpp)
 
 # Includes
 target_include_directories(LightingControl PRIVATE

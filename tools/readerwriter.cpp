@@ -1,4 +1,4 @@
-#include "settingsrw.h"
+#include "readerwriter.h"
 #include <algorithm>
 #include <sqlite3.h>
 
@@ -586,4 +586,75 @@ bool deleteTeam(const std::string &dbPath, int id) {
   sqlite3_finalize(stmt);
   sqlite3_close(db);
   return ok;
+}
+
+#include <sqlite3.h>
+
+bool saveLedRestoreState(const std::string &dbPath,
+                         const std::vector<LEDData> &leds) {
+  sqlite3 *db = nullptr;
+
+  if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
+    LOG_ERROR() << "saveLedRestoreState: failed to open DB";
+    return false;
+  }
+
+  const char *createSql = "CREATE TABLE IF NOT EXISTS led_restore ("
+                          "led_index INTEGER PRIMARY KEY,"
+                          "red INTEGER NOT NULL,"
+                          "green INTEGER NOT NULL,"
+                          "blue INTEGER NOT NULL);";
+
+  if (sqlite3_exec(db, createSql, nullptr, nullptr, nullptr) != SQLITE_OK) {
+    LOG_ERROR() << "saveLedRestoreState: failed to create table";
+    sqlite3_close(db);
+    return false;
+  }
+
+  sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
+
+  sqlite3_exec(db, "DELETE FROM led_restore;", nullptr, nullptr, nullptr);
+
+  const char *insertSql =
+      "INSERT INTO led_restore (led_index, red, green, blue) "
+      "VALUES (?, ?, ?, ?);";
+
+  sqlite3_stmt *stmt = nullptr;
+
+  if (sqlite3_prepare_v2(db, insertSql, -1, &stmt, nullptr) != SQLITE_OK) {
+    LOG_ERROR() << "saveLedRestoreState: prepare failed";
+    sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+    sqlite3_close(db);
+    return false;
+  }
+
+  for (size_t i = 0; i < leds.size(); ++i) {
+    sqlite3_reset(stmt);
+
+    sqlite3_bind_int(stmt, 1, static_cast<int>(i));
+    sqlite3_bind_int(stmt, 2, leds[i].redVal);
+    sqlite3_bind_int(stmt, 3, leds[i].grnVal);
+    sqlite3_bind_int(stmt, 4, leds[i].bluVal);
+
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+      LOG_ERROR() << "saveLedRestoreState: insert failed at index " << i;
+      sqlite3_finalize(stmt);
+      sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+      sqlite3_close(db);
+      return false;
+    }
+  }
+
+  sqlite3_finalize(stmt);
+
+  if (sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+    LOG_ERROR() << "saveLedRestoreState: commit failed";
+    sqlite3_close(db);
+    return false;
+  }
+
+  sqlite3_close(db);
+
+  LOG_INFO() << "Saved LED restore state (" << leds.size() << " LEDs)";
+  return true;
 }

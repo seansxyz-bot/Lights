@@ -13,6 +13,7 @@ public:
   virtual ~Settings() = default;
 
   void set_restart_enabled(bool enabled);
+  void set_bluetooth_enabled(bool enabled);
 
   sigc::signal<void, bool> &signal_auto_sensor_toggled();
   sigc::signal<void, bool> &signal_lights_toggled();

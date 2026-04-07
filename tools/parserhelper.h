@@ -1,9 +1,9 @@
 #pragma once
 
+#include <curl/curl.h>
+#include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
-
-#include "settingsrw.h"
 
 struct ParserConfig {
   std::string name;
@@ -37,6 +37,28 @@ struct ParsedLiveGame {
   int awayScore = 0;
   std::string period;
   std::string clock;
+};
+
+struct GameInfo {
+  int id;
+  std::string gameState;
+
+  std::string home;
+  std::string away;
+  std::string militaryTime;      // 24 Hour
+  std::string standardTime;      // 12 Hour
+  std::string displayedDateTime; // MM-DD @ HH:MM am/pm
+  std::string dateTimeUTC;       // orignal time string
+  std::string scheduledDate;     // MM/DD
+  std::string venue;
+  std::string scoreHome;
+  std::string scoreAway;
+
+  bool isHomeGame = false;
+  bool isPlayoffGame = false;
+
+  std::string opponentCode;
+  std::string opponentName;
 };
 
 class ParserHelper {

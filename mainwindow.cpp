@@ -15,7 +15,6 @@
 #include <gtkmm.h>
 #include <iomanip>
 #include <iostream>
-#include <random>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -27,10 +26,13 @@
 
 // showGameDayPage();  // use later for animation
 
-MainWindow::MainWindow() {
+MainWindow::MainWindow()
+    : m_btControl(std::string(SETTINGS_PATH) + "/lights.db") {
   Logger::useStdOutAndFile(LOG_FILE_MSTR, true);
   LOG_INFO() << "Logger initialized";
   LOG_INFO() << "MainWindow ctor begin";
+
+  m_bluetoothState = 0;
 
   fullscreen();
 
@@ -50,8 +52,6 @@ MainWindow::MainWindow() {
   resetIdleClockTimer();
 
   LOG_INFO() << "MainWindow ctor complete";
-
-  refreshTodayGameSchedules();
 }
 
 void MainWindow::loadSettings() {
@@ -67,6 +67,12 @@ void MainWindow::loadSettings() {
              << " schedule_entries=" << m_schedule.size();
   if (m_options.on)
     m_powerThread.setEnabled(m_options, true);
+
+  if (!m_btControl.init()) {
+    LOG_ERROR() << "BTControl init failed";
+  } else {
+    LOG_INFO() << "BTControl initialized";
+  }
 }
 
 void MainWindow::startThreads() {
@@ -91,15 +97,6 @@ void MainWindow::startConnections() {
         LOG_INFO() << "Top of the hour: " << hour;
 
         if (hour == 0) {
-          refreshTodayGameSchedules();
-        }
-
-        auto activeSports = getActiveSportsSchedules();
-
-        if (!activeSports.empty()) {
-          LOG_INFO()
-              << "Today is game day from schedule entry 16. Showing GameDay.";
-          showGameDayPage();
         }
       });
   m_newMinuteConn =
@@ -124,6 +121,9 @@ void MainWindow::startConnections() {
 
   m_mobileLightsPoller->signal_schedules_changed().connect(
       sigc::mem_fun(*this, &MainWindow::onMobileSchedulesChanged));
+
+  m_btUiDispatcher.connect(
+      sigc::mem_fun(*this, &MainWindow::onBluetoothWorkerFinished));
 }
 
 void MainWindow::buildShell() {
@@ -316,7 +316,7 @@ void MainWindow::showSettingsPage() {
   });
 
   m_settingsPage->signal_bluetooth_toggled().connect(
-      [this](bool enabled) { m_bluetoothState = enabled; });
+      [this](bool enabled) { startBluetoothTransition(enabled); });
 
   m_settingsPage->signal_restart_requested().connect([this]() {
     if (m_settingsPage)
@@ -336,6 +336,119 @@ void MainWindow::showSettingsPage() {
 
   m_settingsPage->signal_edit_teams_requested().connect(
       [this]() { showTeamListPage(); });
+}
+
+void MainWindow::setBluetoothButtonEnabled(bool enabled) {
+  if (m_settingsPage)
+    m_settingsPage->set_bluetooth_enabled(enabled);
+}
+
+void MainWindow::startBluetoothTransition(bool enable) {
+  if (m_btBusy.exchange(true)) {
+    LOG_WARN() << "Bluetooth transition ignored because one is already running";
+    return;
+  }
+
+  setBluetoothButtonEnabled(false);
+
+  if (m_btWorker.joinable())
+    m_btWorker.join();
+
+  m_btWorker = std::thread([this, enable]() {
+    bool success = false;
+    std::string toast;
+
+    LOG_INFO() << "Bluetooth worker started -> " << (enable ? "ON" : "OFF");
+
+    if (enable) {
+      if (!m_btControl.powerOn()) {
+        toast = m_btControl.lastError().empty() ? "Failed to power on bluetooth"
+                                                : m_btControl.lastError();
+      } else {
+        m_bluetoothState = 1;
+
+        if (!m_bluezAgent.start("NoInputNoOutput")) {
+          LOG_WARN() << "BluezAgent start failed: " << m_bluezAgent.lastError();
+        }
+
+        if (!m_btControl.setPairable(true))
+          LOG_WARN() << "Failed to set bluetooth pairable on";
+
+        if (!m_btControl.setDiscoverable(true))
+          LOG_WARN() << "Failed to set bluetooth discoverable on";
+
+        if (!m_btControl.startScan()) {
+          LOG_WARN() << "Failed to start bluetooth scan";
+          toast = "Bluetooth on, but scan failed";
+        } else {
+          toast = "Bluetooth pairing mode on";
+        }
+
+        success = true;
+      }
+
+    } else {
+      m_btControl.disconnectAllDevices();
+      m_btControl.stopScan();
+      m_btControl.setDiscoverable(false);
+      m_btControl.setPairable(false);
+      m_bluezAgent.stop();
+
+      if (!m_btControl.powerOff()) {
+        toast = m_btControl.lastError().empty()
+                    ? "Failed to power off bluetooth"
+                    : m_btControl.lastError();
+      } else {
+        m_bluetoothState = 0;
+        toast = "Bluetooth off";
+        success = true;
+      }
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(m_btResultMutex);
+      m_btResultEnabled = enable;
+      m_btResultSuccess = success;
+      m_btResultToast = toast;
+    }
+
+    m_btUiDispatcher.emit();
+  });
+}
+
+void MainWindow::onBluetoothWorkerFinished() {
+  if (m_btWorker.joinable())
+    m_btWorker.join();
+
+  bool enable = false;
+  bool success = false;
+  std::string toast;
+
+  {
+    std::lock_guard<std::mutex> lock(m_btResultMutex);
+    enable = m_btResultEnabled;
+    success = m_btResultSuccess;
+    toast = m_btResultToast;
+  }
+
+  if (success && enable) {
+    if (m_bluetoothPollConn.connected())
+      m_bluetoothPollConn.disconnect();
+
+    m_bluetoothPollConn = Glib::signal_timeout().connect_seconds(
+        sigc::mem_fun(*this, &MainWindow::onBluetoothPollTick), 2);
+  } else if (!enable) {
+    stopBluetoothPolling();
+  }
+
+  if (!toast.empty())
+    showShortToast(toast);
+
+  setBluetoothButtonEnabled(true);
+  m_btBusy = false;
+
+  LOG_INFO() << "Bluetooth worker finished success=" << success
+             << " enabled=" << enable;
 }
 
 void MainWindow::showThemesPage(bool schedulerMode) {
@@ -516,7 +629,7 @@ void MainWindow::createEditTeamPage(const TeamRecord &team) {
 
   m_stack.add(*m_editTeam, "edit_team");
   m_editTeam->signal_validation_failed().connect(
-      [this](const std::string &msg) { m_toast.showMessage(msg); });
+      [this](const std::string &msg) { showShortToast(msg); });
 }
 
 void MainWindow::showEditTeamPage(const TeamRecord &team) {
@@ -595,7 +708,6 @@ void MainWindow::showGameDayPage() {
 
   m_stack.add(*m_gameDayPage, "game_day");
   showPage("game_day");
-  m_stack.add(*m_gameDayPage, "game_day");
   m_stack.set_visible_child(*m_gameDayPage);
   m_stack.show_all_children();
   show_all_children();
@@ -617,6 +729,95 @@ void MainWindow::showGameDayPage() {
         return false;
       },
       30);
+}
+
+void MainWindow::setBluetoothEnabled(bool enabled) {
+  LOG_INFO() << "Bluetooth toggled -> " << (enabled ? "ON" : "OFF");
+
+  if (enabled) {
+    if (!m_btControl.powerOn()) {
+      m_bluetoothState = 0;
+      showShortToast(m_btControl.lastError().empty()
+                         ? "Failed to power on bluetooth"
+                         : m_btControl.lastError());
+      return;
+    }
+
+    m_bluetoothState = 1;
+    showShortToast("Bluetooth on");
+
+    if (!m_bluezAgent.start("NoInputNoOutput")) {
+      LOG_WARN() << "BluezAgent start failed: " << m_bluezAgent.lastError();
+      if (!m_bluezAgent.lastError().empty())
+        showShortToast(m_bluezAgent.lastError());
+    }
+
+    if (!m_btControl.setPairable(true)) {
+      LOG_WARN() << "Failed to set bluetooth pairable on";
+    }
+
+    if (!m_btControl.setDiscoverable(true)) {
+      LOG_WARN() << "Failed to set bluetooth discoverable on";
+    }
+
+    if (!m_btControl.startScan()) {
+      LOG_WARN() << "Failed to start bluetooth scan";
+    } else {
+      showShortToast("Bluetooth pairing mode on");
+    }
+
+    if (m_bluetoothPollConn.connected())
+      m_bluetoothPollConn.disconnect();
+
+    m_bluetoothPollConn = Glib::signal_timeout().connect_seconds(
+        sigc::mem_fun(*this, &MainWindow::onBluetoothPollTick), 2);
+
+    return;
+  }
+
+  stopBluetoothPolling();
+
+  m_btControl.disconnectAllDevices();
+  m_btControl.stopScan();
+  m_btControl.setDiscoverable(false);
+  m_btControl.setPairable(false);
+  m_bluezAgent.stop();
+
+  if (!m_btControl.powerOff()) {
+    showShortToast(m_btControl.lastError().empty()
+                       ? "Failed to power off bluetooth"
+                       : m_btControl.lastError());
+    return;
+  }
+
+  m_bluetoothState = 0;
+  showShortToast("Bluetooth off");
+}
+
+bool MainWindow::onBluetoothPollTick() {
+  if (!m_bluetoothState)
+    return false;
+
+  m_btControl.scanAvailableDevices();
+  m_btControl.scanPairedDevices();
+  m_btControl.trustAllPairedDevices();
+
+  auto best = m_btControl.getBestDevice();
+  if (best && best->connected) {
+    return true;
+  }
+
+  if (m_btControl.autoReconnectBestDevice()) {
+    if (!m_btControl.lastStatus().empty())
+      showShortToast(m_btControl.lastStatus());
+  }
+
+  return true;
+}
+
+void MainWindow::stopBluetoothPolling() {
+  if (m_bluetoothPollConn.connected())
+    m_bluetoothPollConn.disconnect();
 }
 
 void MainWindow::destroyTemporaryPage(const std::string &pageName) {
@@ -792,238 +993,6 @@ std::string normalizeTeamFileName(const std::string &name) {
   return s + "_logo.png";
 }
 
-void MainWindow::refreshTodayGameSchedules() {
-  LOG_INFO() << "refreshTodayGameSchedules begin";
-
-  const std::string settingsPath = std::string(SETTINGS_PATH);
-  const std::string teamsDbPath = settingsPath + "/teams.db";
-
-  auto teams = readTeams(teamsDbPath);
-  if (teams.empty()) {
-    LOG_WARN() << "No teams found in " << teamsDbPath;
-    writeSchedule(settingsPath, m_schedule);
-    ClockThread::instance().setSchedules(m_schedule);
-  }
-
-  auto replaceAll = [](std::string text, const std::string &from,
-                       const std::string &to) -> std::string {
-    if (from.empty())
-      return text;
-
-    std::size_t pos = 0;
-    while ((pos = text.find(from, pos)) != std::string::npos) {
-      text.replace(pos, from.size(), to);
-      pos += to.size();
-    }
-    return text;
-  };
-
-  auto buildUrlFromTemplate = [&](const TeamRecord &team) -> std::string {
-    std::string url = team.nextGameUrlTemplate;
-
-    // Support a few common placeholder styles so the DB/templates can be
-    // flexible.
-    url = replaceAll(url, "{teamId}", team.apiTeamId);
-    url = replaceAll(url, "{TEAM_ID}", team.apiTeamId);
-    url = replaceAll(url, "%TEAM_ID%", team.apiTeamId);
-
-    url = replaceAll(url, "{teamCode}", team.teamCode);
-    url = replaceAll(url, "{TEAM_CODE}", team.teamCode);
-    url = replaceAll(url, "%TEAM_CODE%", team.teamCode);
-
-    return url;
-  };
-
-  auto findThemeIdByName = [&](const std::string &themeName) -> int {
-    for (const auto &theme : m_themes) {
-      if (theme.name == themeName)
-        return theme.id;
-    }
-    return 0;
-  };
-
-  auto findScheduleIndexByName = [&](const std::string &name) -> int {
-    for (std::size_t i = 0; i < m_schedule.size(); ++i) {
-      if (m_schedule[i].name == name)
-        return static_cast<int>(i);
-    }
-    return -1;
-  };
-
-  auto formatMmDd = [](const std::tm &tmLocal) -> std::string {
-    char buf[16];
-    std::strftime(buf, sizeof(buf), "%m/%d", &tmLocal);
-    return buf;
-  };
-
-  auto formatHhMm = [](const std::tm &tmLocal) -> std::string {
-    char buf[16];
-    std::strftime(buf, sizeof(buf), "%H:%M", &tmLocal);
-    return buf;
-  };
-
-  auto utcToLocalTm = [](const std::string &utcIso, std::tm &outLocal) -> bool {
-    // Expected shape like: 2025-03-29T19:00:00Z
-    std::tm tmUtc{};
-    std::istringstream ss(utcIso);
-    ss >> std::get_time(&tmUtc, "%Y-%m-%dT%H:%M:%SZ");
-    if (ss.fail())
-      return false;
-
-#if defined(_GNU_SOURCE) || defined(__USE_MISC) || defined(__APPLE__)
-    std::time_t utcEpoch = timegm(&tmUtc);
-#else
-    // Fallback if timegm is unavailable.
-    // Temporarily interpret as local, then compensate using local-vs-gmt
-    // offset.
-    std::time_t localGuess = std::mktime(&tmUtc);
-    std::tm gmtFromGuess = *std::gmtime(&localGuess);
-    std::time_t gmtAsLocal = std::mktime(&gmtFromGuess);
-    std::time_t utcEpoch = localGuess + (localGuess - gmtAsLocal);
-#endif
-
-    if (utcEpoch == static_cast<std::time_t>(-1))
-      return false;
-
-    std::tm *localPtr = std::localtime(&utcEpoch);
-    if (!localPtr)
-      return false;
-
-    outLocal = *localPtr;
-    return true;
-  };
-
-  auto todayLocalMmDd = [&]() -> std::string {
-    std::time_t now = std::time(nullptr);
-    std::tm *localNow = std::localtime(&now);
-    if (!localNow)
-      return "";
-    return formatMmDd(*localNow);
-  }();
-
-  // We update existing schedule entries by theme-name when possible.
-  // If a team schedule does not exist yet, we append it.
-  for (const auto &team : teams) {
-    if (!team.enabled) {
-      LOG_INFO() << "Skipping disabled team: " << team.name;
-      continue;
-    }
-
-    const std::string scheduleName =
-        !team.themeName.empty() ? team.themeName : team.name;
-
-    const int themeId =
-        !team.themeName.empty() ? findThemeIdByName(team.themeName) : 0;
-
-    int scheduleIndex = findScheduleIndexByName(scheduleName);
-    if (scheduleIndex < 0) {
-      Schedule fresh;
-      fresh.name = scheduleName;
-      fresh.themeID = themeId;
-      fresh.enabled = 0;
-      fresh.sDate = "01/01";
-      fresh.sTime = "00:00";
-      fresh.eDate = "01/01";
-      fresh.eTime = "00:00";
-      m_schedule.push_back(fresh);
-      scheduleIndex = static_cast<int>(m_schedule.size()) - 1;
-      LOG_INFO() << "Created new schedule slot for " << scheduleName;
-    }
-
-    Schedule entry = m_schedule[scheduleIndex];
-    entry.name = scheduleName;
-    if (themeId > 0)
-      entry.themeID = themeId;
-
-    if (team.nextGameUrlTemplate.empty() || team.nextGameParser.empty()) {
-      LOG_WARN() << "Team missing next-game config: " << team.name;
-      entry.enabled = 0;
-      m_schedule[scheduleIndex] = entry;
-      continue;
-    }
-
-    const std::string url = buildUrlFromTemplate(team);
-    if (url.empty()) {
-      LOG_WARN() << "Built empty next-game URL for team: " << team.name;
-      entry.enabled = 0;
-      m_schedule[scheduleIndex] = entry;
-      continue;
-    }
-
-    LOG_INFO() << "Fetching next game for " << team.name << " from " << url;
-
-    const std::string body = http.get(url);
-    if (body.empty()) {
-      LOG_WARN() << "Empty HTTP response for team: " << team.name;
-      entry.enabled = 0;
-      m_schedule[scheduleIndex] = entry;
-      continue;
-    }
-
-    ParserConfig parserConfig;
-    if (!ParserHelper::loadParserConfig(settingsPath, team.nextGameParser,
-                                        parserConfig)) {
-      LOG_ERROR() << "Failed loading parser '" << team.nextGameParser
-                  << "' for team: " << team.name;
-      entry.enabled = 0;
-      m_schedule[scheduleIndex] = entry;
-      continue;
-    }
-
-    GameInfo game;
-    if (!ParserHelper::parseNextGameJson(body, parserConfig, game)) {
-      LOG_WARN() << "Failed parsing next game for team: " << team.name;
-      entry.enabled = 0;
-      m_schedule[scheduleIndex] = entry;
-      continue;
-    }
-
-    std::tm localGameTm{};
-    if (!utcToLocalTm(game.dateTimeUTC, localGameTm)) {
-      LOG_WARN() << "Could not convert UTC time for team: " << team.name
-                 << " utc=" << game.dateTimeUTC;
-      entry.enabled = 0;
-      m_schedule[scheduleIndex] = entry;
-      continue;
-    }
-
-    game.scheduledDate = formatMmDd(localGameTm);
-    game.militaryTime = formatHhMm(localGameTm);
-
-    const bool isToday = (game.scheduledDate == todayLocalMmDd);
-
-    if (!isToday) {
-      LOG_INFO() << "No game today for " << team.name << " next game is on "
-                 << game.scheduledDate;
-      entry.enabled = 0;
-      entry.sDate = game.scheduledDate;
-      entry.sTime = game.militaryTime;
-      entry.eDate = game.scheduledDate;
-      entry.eTime = addHours(game.militaryTime, 3);
-      m_schedule[scheduleIndex] = entry;
-      continue;
-    }
-
-    entry.enabled = 1;
-    entry.sDate = game.scheduledDate;
-    entry.sTime = game.militaryTime;
-    entry.eDate = game.scheduledDate;
-    entry.eTime = addHours(game.militaryTime, 3);
-
-    LOG_INFO() << "Game today for " << team.name << " start=" << entry.sDate
-               << " " << entry.sTime << " end=" << entry.eDate << " "
-               << entry.eTime << " theme=" << entry.themeID;
-
-    m_schedule[scheduleIndex] = entry;
-  }
-
-  writeSchedule(settingsPath, m_schedule);
-  ClockThread::instance().setSchedules(m_schedule);
-
-  LOG_INFO() << "refreshTodayGameSchedules complete. schedule_entries="
-             << m_schedule.size();
-}
-
 void removeOldTeamSchedules(std::vector<Schedule> &list,
                             const std::vector<TeamRecord> &teams) {
   std::set<std::string> valid;
@@ -1086,7 +1055,7 @@ bool MainWindow::isGameDay(const std::string &date) {
   int month = now->tm_mon + 1;
   int day = now->tm_mday;
 
-  char today[6];
+  char today[16];
   std::snprintf(today, sizeof(today), "%02d/%02d", month, day);
 
   const bool match = (date == today);
@@ -1233,8 +1202,45 @@ void MainWindow::showEditThemePage(int themeId) {
   m_stack.queue_draw();
 }
 
+void MainWindow::showShortToast(const std::string &message) {
+  if (message.empty())
+    return;
+
+  if (m_lastShortToastMessage == message)
+    return;
+
+  m_lastShortToastMessage = message;
+
+  if (m_toastHideConn.connected())
+    m_toastHideConn.disconnect();
+
+  m_toast.showMessage(message);
+
+  m_toastHideConn = Glib::signal_timeout().connect_seconds(
+      [this]() -> bool {
+        m_toast.hideMessage();
+        m_lastShortToastMessage.clear();
+        return false;
+      },
+      5);
+}
+
 MainWindow::~MainWindow() {
   LOG_INFO() << "MainWindow dtor begin";
+
+  stopBluetoothPolling();
+  m_bluezAgent.stop();
+
+  if (m_btWorker.joinable())
+    m_btWorker.join();
+
+  if (m_bluetoothState) {
+    m_btControl.disconnectAllDevices();
+    m_btControl.powerOff();
+  }
+
+  if (m_toastHideConn.connected())
+    m_toastHideConn.disconnect();
 
   m_powerThread.stop(); // 👈 ADD THIS
 

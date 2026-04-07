@@ -94,6 +94,11 @@ void Settings::set_restart_enabled(bool enabled) {
     m_restartBtn->set_sensitive(enabled);
 }
 
+void Settings::set_bluetooth_enabled(bool enabled) {
+  if (m_bluetoothBtn)
+    m_bluetoothBtn->set_sensitive(enabled);
+}
+
 sigc::signal<void, bool> &Settings::signal_auto_sensor_toggled() {
   return m_signalAutoSensorToggled;
 }

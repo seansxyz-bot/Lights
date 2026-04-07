@@ -9,7 +9,7 @@
 #include <glibmm/dispatcher.h>
 #include <sigc++/sigc++.h>
 
-#include "../tools/settingsrw.h"
+#include "../tools/readerwriter.h"
 
 class MobileLightsPoller {
 public:

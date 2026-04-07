@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../tools/settingsrw.h"
+#include "../tools/readerwriter.h"
 #include <gtkmm.h>
 #include <sigc++/sigc++.h>
 
