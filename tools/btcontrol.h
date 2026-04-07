@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <sigc++/sigc++.h>
 #include <string>
 #include <vector>
 
@@ -26,18 +27,15 @@ public:
 
   bool init();
 
-  // adapter / power
   bool powerOn();
   bool powerOff();
   bool isPoweredOn() const;
 
-  // pairing / visibility
   bool enableAgent(const std::string &capability = "NoInputNoOutput");
   bool setDefaultAgent();
   bool setPairable(bool enabled);
   bool setDiscoverable(bool enabled);
 
-  // discovery / refresh
   bool startScan();
   bool stopScan();
   bool scanPairedDevices();
@@ -45,13 +43,11 @@ public:
   bool refreshDeviceInfo(const std::string &macAddress);
   bool refreshAllKnownDevices();
 
-  // database reads
   std::vector<BTDevice> getDevicesRankedByLastConnected() const;
   std::vector<BTDevice> getDiscoveredDevices() const;
   std::optional<BTDevice> getBestDevice() const;
   std::optional<BTDevice> getDeviceByMac(const std::string &macAddress) const;
 
-  // actions
   bool pairDevice(const std::string &macAddress);
   bool trustDevice(const std::string &macAddress);
   bool connectDevice(const std::string &macAddress);
@@ -59,33 +55,34 @@ public:
   bool disconnectAllDevices();
   bool removeDevice(const std::string &macAddress);
 
-  // higher-level behavior
   bool trustAllPairedDevices();
   bool autoReconnectBestDevice();
 
   const std::string &lastStatus() const;
   const std::string &lastError() const;
 
+  sigc::signal<void, bool> &signal_power_changed() {
+    return m_signalPowerChanged;
+  }
+
 private:
   std::string m_dbPath;
-
   mutable std::string m_lastStatus;
   mutable std::string m_lastError;
 
+  sigc::signal<void, bool> m_signalPowerChanged;
+
   void setStatus(const std::string &msg) const;
   void setError(const std::string &msg) const;
-
   bool createTables() const;
   bool upsertDevice(const BTDevice &device) const;
   bool markConnectedNow(const std::string &macAddress) const;
   bool markSeenNow(const std::string &macAddress) const;
   bool setConnectedState(const std::string &macAddress, bool connected) const;
   bool setSystemAlias(const std::string &name);
-
   static std::string nowUtc();
   static std::string trim(const std::string &s);
   static bool isValidMacAddress(const std::string &macAddress);
-
   static bool runCommand(const std::string &cmd, std::string *output = nullptr);
   static bool parseBluetoothctlDevices(const std::string &text,
                                        std::vector<BTDevice> &devices);

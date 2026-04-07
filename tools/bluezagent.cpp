@@ -81,8 +81,6 @@ bool BluezAgent::start(const std::string &capability) {
     return false;
   }
 
-  LOG_INFO() << "BluezAgent started capability=" << m_capability
-             << " object_path=" << kObjectPath;
   return true;
 }
 
@@ -228,7 +226,6 @@ void BluezAgent::handleMethodCall(
   const std::string method = method_name ? method_name : "";
 
   if (method == "Release") {
-    LOG_INFO() << "BluezAgent::Release";
     g_dbus_method_invocation_return_value(invocation, nullptr);
     return;
   }
@@ -244,9 +241,6 @@ void BluezAgent::handleMethodCall(
     guint32 passkey = 0;
     g_variant_get(parameters, "(&ou)", &device, &passkey);
 
-    LOG_INFO() << "BluezAgent::RequestConfirmation device="
-               << (device ? device : "") << " passkey=" << passkey;
-
     g_dbus_method_invocation_return_value(invocation, nullptr);
     return;
   }
@@ -254,9 +248,6 @@ void BluezAgent::handleMethodCall(
   if (method == "RequestAuthorization") {
     const gchar *device = nullptr;
     g_variant_get(parameters, "(&o)", &device);
-
-    LOG_INFO() << "BluezAgent::RequestAuthorization device="
-               << (device ? device : "");
 
     g_dbus_method_invocation_return_value(invocation, nullptr);
     return;
@@ -267,9 +258,6 @@ void BluezAgent::handleMethodCall(
     const gchar *uuid = nullptr;
     g_variant_get(parameters, "(&o&s)", &device, &uuid);
 
-    LOG_INFO() << "BluezAgent::AuthorizeService device="
-               << (device ? device : "") << " uuid=" << (uuid ? uuid : "");
-
     g_dbus_method_invocation_return_value(invocation, nullptr);
     return;
   }
@@ -278,9 +266,6 @@ void BluezAgent::handleMethodCall(
     const gchar *device = nullptr;
     const gchar *pincode = nullptr;
     g_variant_get(parameters, "(&o&s)", &device, &pincode);
-
-    LOG_INFO() << "BluezAgent::DisplayPinCode device=" << (device ? device : "")
-               << " pincode=" << (pincode ? pincode : "");
 
     g_dbus_method_invocation_return_value(invocation, nullptr);
     return;
@@ -291,9 +276,6 @@ void BluezAgent::handleMethodCall(
     guint32 passkey = 0;
     guint16 entered = 0;
     g_variant_get(parameters, "(&ouq)", &device, &passkey, &entered);
-
-    LOG_INFO() << "BluezAgent::DisplayPasskey device=" << (device ? device : "")
-               << " passkey=" << passkey << " entered=" << entered;
 
     g_dbus_method_invocation_return_value(invocation, nullptr);
     return;

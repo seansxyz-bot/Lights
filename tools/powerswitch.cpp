@@ -42,7 +42,8 @@ void PowerSwitch::stop() {
 }
 
 void PowerSwitch::setEnabled(Options &options, bool enabled) {
-  Logger::info() << "Power Switched to " << (enabled ? "On" : "off");
+  Logger::info() << "Power Switched to " << (enabled ? "On" : "Off");
+
   {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_pendingEnabled = enabled;
@@ -54,8 +55,6 @@ void PowerSwitch::setEnabled(Options &options, bool enabled) {
 }
 
 void PowerSwitch::threadMain() {
-  PowerSwitch power(m_chipName);
-
   while (true) {
     std::optional<bool> pending;
 
@@ -77,8 +76,12 @@ void PowerSwitch::threadMain() {
 
     LOG_INFO() << "PowerSwitch: state set to " << (*pending ? "ON" : "OFF");
 
+    // TODO: actual GPIO hardware switching here
+
     if (*pending) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
+
+    m_signalPowerChanged.emit(*pending);
   }
 }

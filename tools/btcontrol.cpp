@@ -122,7 +122,6 @@ bool BTControl::isValidMacAddress(const std::string &macAddress) {
 
 bool BTControl::runCommand(const std::string &cmd, std::string *output) {
   std::array<char, 512> buffer{};
-  LOG_INFO() << "BT cmd: " << cmd;
 
   FILE *pipe = popen(cmd.c_str(), "r");
   if (!pipe) {
@@ -138,10 +137,6 @@ bool BTControl::runCommand(const std::string &cmd, std::string *output) {
 
   const int rc = pclose(pipe);
   const std::string out = oss.str();
-
-  LOG_INFO() << "BT rc: " << rc;
-  if (!out.empty())
-    LOG_INFO() << "BT out: " << trim(out);
 
   if (output)
     *output = out;
@@ -275,11 +270,6 @@ bool BTControl::upsertDevice(const BTDevice &device) const {
     return false;
   }
 
-  LOG_INFO() << "BT device upserted: " << device.name << " ["
-             << device.macAddress << "] paired=" << device.paired
-             << " trusted=" << device.trusted
-             << " connected=" << device.connected
-             << " discovered=" << device.discovered;
   return true;
 }
 
@@ -380,6 +370,8 @@ bool BTControl::powerOn() {
             LOG_WARN() << "Bluetooth powered on but failed to set alias";
           } else
             setStatus("Bluetooth on");
+
+          m_signalPowerChanged.emit(true);
           return true;
         }
       }
@@ -425,6 +417,7 @@ bool BTControl::powerOff() {
         std::this_thread::sleep_for(std::chrono::milliseconds(250));
         if (!isPoweredOn()) {
           setStatus("Bluetooth off");
+          m_signalPowerChanged.emit(false);
           return true;
         }
       }
@@ -438,6 +431,7 @@ bool BTControl::powerOff() {
           std::this_thread::sleep_for(std::chrono::milliseconds(250));
           if (!isPoweredOn()) {
             setStatus("Bluetooth off");
+            m_signalPowerChanged.emit(false);
             return true;
           }
         }
@@ -466,8 +460,6 @@ bool BTControl::isPoweredOn() const {
     return false;
   }
 
-  LOG_INFO() << "BT show raw output:\n" << out;
-
   std::istringstream iss(out);
   std::string line;
 
@@ -475,7 +467,6 @@ bool BTControl::isPoweredOn() const {
     line = trim(line);
     if (line.rfind("Powered:", 0) == 0) {
       const bool powered = (trim(line.substr(8)) == "yes");
-      LOG_INFO() << "BT Powered state parsed: " << powered;
       return powered;
     }
   }
@@ -533,8 +524,6 @@ bool BTControl::scanPairedDevices() {
   std::vector<BTDevice> devices;
   parseBluetoothctlDevices(out, devices);
 
-  LOG_INFO() << "BT paired devices found: " << devices.size();
-
   for (auto &device : devices) {
     std::string infoOut;
     if (runCommand("bluetoothctl info " + device.macAddress, &infoOut)) {
@@ -570,8 +559,6 @@ bool BTControl::scanAvailableDevices() {
 
   std::vector<BTDevice> devices;
   parseBluetoothctlDevices(out, devices);
-
-  LOG_INFO() << "BT available devices found: " << devices.size();
 
   for (auto &device : devices) {
     std::string infoOut;

@@ -658,3 +658,52 @@ bool saveLedRestoreState(const std::string &dbPath,
   LOG_INFO() << "Saved LED restore state (" << leds.size() << " LEDs)";
   return true;
 }
+
+bool loadLedRestoreState(const std::string &dbPath,
+                         std::vector<LEDData> &leds) {
+  sqlite3 *db = nullptr;
+
+  if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
+    LOG_ERROR() << "loadLedRestoreState: failed to open DB";
+    return false;
+  }
+
+  const char *sql = "SELECT led_index, red, green, blue "
+                    "FROM led_restore "
+                    "ORDER BY led_index;";
+
+  sqlite3_stmt *stmt = nullptr;
+
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    LOG_ERROR() << "loadLedRestoreState: prepare failed";
+    sqlite3_close(db);
+    return false;
+  }
+
+  size_t count = 0;
+
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    int idx = sqlite3_column_int(stmt, 0);
+    int r = sqlite3_column_int(stmt, 1);
+    int g = sqlite3_column_int(stmt, 2);
+    int b = sqlite3_column_int(stmt, 3);
+
+    if (idx >= 0 && static_cast<size_t>(idx) < leds.size()) {
+      leds[idx].redVal = r;
+      leds[idx].grnVal = g;
+      leds[idx].bluVal = b;
+      count++;
+    }
+  }
+
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+
+  if (count == 0) {
+    LOG_WARN() << "loadLedRestoreState: no data found";
+    return false;
+  }
+
+  LOG_INFO() << "Loaded LED restore state (" << count << " LEDs)";
+  return true;
+}

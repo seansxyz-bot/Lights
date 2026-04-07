@@ -27,10 +27,12 @@
 #include "tools/bluezagent.h"
 #include "tools/btcontrol.h"
 #include "tools/gpiohelper.h"
+#include "tools/lightshow.h"
 #include "tools/parserhelper.h"
 #include "tools/powerswitch.h"
 #include <atomic>
 #include <gtkmm.h>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -53,12 +55,26 @@ public:
   virtual ~MainWindow();
 
 private:
+  void updateLightShowState();
+  void startLightShow();
+  void stopLightShow();
+
+private:
+  std::unique_ptr<LightShow> m_lightShow;
+  bool m_lightShowRunning = false;
+
   // ---------- app data ----------
   std::vector<LEDData> m_ledInfo;
   Options m_options;
   std::vector<Schedule> m_schedule;
   std::vector<Theme> m_themes;
   std::string m_lastShortToastMessage;
+
+  sigc::connection m_powerChangedConn;
+  sigc::connection m_btPowerChangedConn;
+
+  void onPowerSwitchChanged(bool enabled);
+  void onBluetoothPowerChanged(bool enabled);
 
   PowerSwitch m_powerThread;
   int m_groupSelection = 0;

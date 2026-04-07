@@ -124,6 +124,12 @@ void MainWindow::startConnections() {
 
   m_btUiDispatcher.connect(
       sigc::mem_fun(*this, &MainWindow::onBluetoothWorkerFinished));
+
+  m_powerChangedConn = m_powerThread.signal_power_changed().connect(
+      sigc::mem_fun(*this, &MainWindow::onPowerSwitchChanged));
+
+  m_btPowerChangedConn = m_btControl.signal_power_changed().connect(
+      sigc::mem_fun(*this, &MainWindow::onBluetoothPowerChanged));
 }
 
 void MainWindow::buildShell() {
@@ -1223,6 +1229,77 @@ void MainWindow::showShortToast(const std::string &message) {
         return false;
       },
       5);
+}
+
+void MainWindow::onPowerSwitchChanged(bool enabled) {
+  LOG_INFO() << "MainWindow: power switch changed -> "
+             << (enabled ? "ON" : "OFF");
+
+  m_options.on = enabled;
+  writeOptions(SETTINGS_PATH, m_options);
+
+  updateLightShowState();
+}
+
+void MainWindow::onBluetoothPowerChanged(bool enabled) {
+  LOG_INFO() << "MainWindow: bluetooth power changed -> "
+             << (enabled ? "ON" : "OFF");
+
+  m_bluetoothState = enabled ? 1 : 0;
+
+  if (!enabled) {
+    stopBluetoothPolling();
+  }
+
+  updateLightShowState();
+}
+
+void MainWindow::updateLightShowState() {
+  const bool shouldRun = (m_options.on && m_bluetoothState);
+
+  if (shouldRun) {
+    if (!m_lightShowRunning) {
+      startLightShow();
+    }
+  } else {
+    if (m_lightShowRunning) {
+      stopLightShow();
+    }
+  }
+}
+
+void MainWindow::startLightShow() {
+  if (m_lightShowRunning)
+    return;
+
+  LOG_INFO() << "Starting LightShow";
+
+  if (!m_lightShow) {
+    m_lightShow = std::make_unique<LightShow>(
+        NUM_OF_LEDS, "alsa_output.platform-soc_sound.pro-output-0.monitor");
+  }
+
+  if (!m_lightShow->start()) {
+    LOG_ERROR() << "LightShow failed to start";
+    return;
+  }
+
+  m_lightShowRunning = true;
+}
+
+void MainWindow::stopLightShow() {
+  if (!m_lightShowRunning)
+    return;
+
+  LOG_INFO() << "Stopping LightShow";
+
+  if (m_lightShow) {
+    m_lightShow->stop();
+  }
+
+  m_lightShowRunning = false;
+
+  // send to teensy
 }
 
 MainWindow::~MainWindow() {

@@ -101,3 +101,8 @@ int writeThemeColors(const std::string &dbPath,
 std::vector<TeamRecord> readTeams(const std::string &dbPath);
 bool writeTeam(const std::string &dbPath, const TeamRecord &team);
 bool deleteTeam(const std::string &dbPath, int id);
+
+bool saveLedRestoreState(const std::string &dbPath,
+                         const std::vector<LEDData> &leds);
+
+bool loadLedRestoreState(const std::string &dbPath, std::vector<LEDData> &leds);
