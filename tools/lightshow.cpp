@@ -18,7 +18,9 @@ bool LightShow::start() {
 
   capture_ = std::thread(&LightShow::captureLoop_, this);
   render_ = std::thread(&LightShow::renderLoop_, this);
-  return true;
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  return running_.load();
 }
 
 void LightShow::stop() {

@@ -319,6 +319,7 @@ void MainWindow::showSettingsPage() {
   m_settingsPage->signal_lights_toggled().connect([this](bool enabled) {
     m_options.on = enabled;
     m_powerThread.setEnabled(m_options, enabled);
+    updateLightShowState();
   });
 
   m_settingsPage->signal_bluetooth_toggled().connect(
@@ -455,6 +456,7 @@ void MainWindow::onBluetoothWorkerFinished() {
 
   LOG_INFO() << "Bluetooth worker finished success=" << success
              << " enabled=" << enable;
+  updateLightShowState();
 }
 
 void MainWindow::showThemesPage(bool schedulerMode) {
@@ -1255,6 +1257,7 @@ void MainWindow::onBluetoothPowerChanged(bool enabled) {
 }
 
 void MainWindow::updateLightShowState() {
+  std::cout << "Start Lightshow" << std::endl;
   const bool shouldRun = (m_options.on && m_bluetoothState);
 
   if (shouldRun) {
