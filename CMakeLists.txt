@@ -66,9 +66,12 @@ set(SOURCES
     threads/mobilelightspoller.h
 
     tools/bme280.h
+    tools/btcontrol.h
+    tools/bluezagent.h
     tools/buttonimagemaker.h
     tools/gpiohelper.h
     tools/httphelper.h
+    tools/lightshow.h
     tools/logger.h
     tools/parserhelper.h
     tools/powerswitch.h
@@ -104,18 +107,18 @@ set(SOURCES
     threads/mobilelightspoller.cpp
 
     tools/bme280.c
+    tools/btcontrol.cpp
+    tools/bluezagent.cpp
     tools/gpiohelper.cpp
     tools/httphelper.cpp
+    tools/lightshow.cpp
     tools/parserhelper.cpp
     tools/powerswitch.cpp
     tools/readerwriter.cpp
 )
 
 add_executable(LightingControl ${SOURCES}
-    tools/btcontrol.h tools/btcontrol.cpp
-    tools/bluezagent.h tools/bluezagent.cpp
-    tools/lightshow.h tools/lightshow.cpp
-    tools/lightshow.h tools/lightshow.cpp)
+    )
 
 # Includes
 target_include_directories(LightingControl PRIVATE
