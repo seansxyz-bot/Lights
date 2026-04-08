@@ -102,7 +102,8 @@ void MainWindow::startConnections() {
   m_newMinuteConn =
       ClockThread::instance().signal_new_minute().connect([this](int minute) {
         LOG_INFO() << "Top of the minute: " << minute;
-        m_powerThread.setEnabled(m_options, gpio.read(PIN_SENSOR, true));
+        if (m_options.sensor)
+          m_powerThread.setEnabled(m_options, gpio.read(PIN_SENSOR, true));
       });
   ClockThread::instance().signal_schedule_started().connect(
       sigc::mem_fun(*this, &MainWindow::onScheduleStarted));
