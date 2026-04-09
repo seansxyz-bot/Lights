@@ -118,6 +118,7 @@ set(SOURCES
 )
 
 add_executable(LightingControl ${SOURCES}
+    tools/teensyclient.h tools/teensyclient.cpp
     )
 
 # Includes

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "httphelper.h"
+#include "teensyclient.h"
 
 #if (UBUNTU == 1)
 #define HOME_DIR "/home/dev"
@@ -22,12 +23,6 @@
 
 extern HttpHelper http;
 extern std::atomic<bool> writeToServer;
-
-struct RGB_Color {
-  uint8_t r;
-  uint8_t g;
-  uint8_t b;
-};
 
 struct Theme {
   std::string name;
