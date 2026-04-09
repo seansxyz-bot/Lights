@@ -472,6 +472,7 @@ void MainWindow::showThemesPage(bool schedulerMode) {
     m_themesPage->signal_theme_selected().connect([this](int index) {
       m_options.theme = index;
       writeOptions(std::string(SETTINGS_PATH), m_options);
+      m_teensyClient.applyThemePattern(m_options.theme, m_options.ptrn);
     });
 
     m_themesPage->signal_done().connect([this]() { showHomePage(); });
@@ -500,6 +501,7 @@ void MainWindow::showPatternPage() {
   m_patternPage->signal_pattern_selected().connect([this](int index) {
     m_options.ptrn = index;
     writeOptions(std::string(SETTINGS_PATH), m_options);
+    m_teensyClient.applyThemePattern(m_options.theme, m_options.ptrn);
   });
 
   m_patternPage->signal_done().connect([this]() { showHomePage(); });
@@ -528,6 +530,9 @@ void MainWindow::showDeltaAllPage() {
       m_ledInfo[i].bluVal = b;
     }
     writeLEDInfo(SETTINGS_PATH, m_ledInfo);
+    auto mask =
+        TeensyClient::mask24FromBitString(std::string(NUM_OF_LEDS, '1'));
+    m_teensyClient.applyMaskedRGB(mask, r, g, b);
   });
 
   m_deltaAllPage->signal_done().connect([this]() { showHomePage(); });
@@ -1188,19 +1193,22 @@ void MainWindow::showEditThemePage(int themeId) {
   m_editThemePage = Gtk::manage(new EditThemePage(
       std::string(ICON_PATH), *it, COLOR_PICKER_SIZE, COLOR_BAR_SIZE, 96));
 
-  m_editThemePage->signal_save_requested().connect([this](Theme updatedTheme) {
-    auto it2 = std::find_if(
-        m_themes.begin(), m_themes.end(),
-        [&updatedTheme](const Theme &t) { return t.id == updatedTheme.id; });
+  m_editThemePage->signal_save_requested().connect(
+      [this, themeId](Theme updatedTheme) {
+        auto it2 = std::find_if(m_themes.begin(), m_themes.end(),
+                                [&updatedTheme](const Theme &t) {
+                                  return t.id == updatedTheme.id;
+                                });
 
-    if (it2 != m_themes.end()) {
-      *it2 = updatedTheme;
-      writeThemeColors(std::string(SETTINGS_PATH), m_themes);
-      LOG_INFO() << "Theme saved: " << updatedTheme.name;
-    }
+        if (it2 != m_themes.end()) {
+          *it2 = updatedTheme;
+          writeThemeColors(std::string(SETTINGS_PATH), m_themes);
+          m_teensyClient.sendThemeColors(themeId, updatedTheme.colors);
+          LOG_INFO() << "Theme saved: " << updatedTheme.name;
+        }
 
-    showEditThemesPage();
-  });
+        showEditThemesPage();
+      });
 
   m_editThemePage->signal_cancel_requested().connect(
       [this]() { showEditThemesPage(); });

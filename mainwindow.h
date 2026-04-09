@@ -68,6 +68,7 @@ private:
   Options m_options;
   std::vector<Schedule> m_schedule;
   std::vector<Theme> m_themes;
+  TeensyClient m_teensyClient;
   std::string m_lastShortToastMessage;
 
   sigc::connection m_powerChangedConn;

@@ -189,12 +189,10 @@ bool TeensyClient::applyMaskedRGB(uint32_t mask24, uint8_t r, uint8_t g,
                 static_cast<uint8_t>((mask24 >> 16) & 0xFF), r, g, b);
 }
 
-bool TeensyClient::applyThemePattern(uint8_t themeId, uint8_t patternId,
-                                     uint8_t speedPct) {
+bool TeensyClient::applyThemePattern(uint8_t themeId, uint8_t patternId) {
   const uint8_t channel = static_cast<uint8_t>(4 + themeId);
-  const uint8_t speed = (speedPct > 100) ? 100 : speedPct;
 
-  return write8(CMD_APPLY_MASK, channel, 0u, 0u, 0u, patternId, speed, 0u);
+  return write8(CMD_APPLY_MASK, channel, 0u, 0u, 0u, patternId, 0u, 0u);
 }
 
 bool TeensyClient::requestThenRead(uint8_t req_code, uint8_t *rx,

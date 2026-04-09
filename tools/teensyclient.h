@@ -11,6 +11,12 @@
 #define BITMASK_LEN (NUM_OF_SHIFT_REGS * 3)
 #define NUM_OF_PADDED_0S (BITMASK_LEN - NUM_OF_LEDS)
 
+struct RGB_Color {
+  uint8_t r = 0;
+  uint8_t g = 0;
+  uint8_t b = 0;
+};
+
 class TeensyClient {
 public:
   std::atomic<bool> on{false}; // thread-safe power gate
@@ -41,12 +47,6 @@ public:
     FILE_ERROR = 3,
   };
 
-  struct RGB_Color {
-    uint8_t r = 0;
-    uint8_t g = 0;
-    uint8_t b = 0;
-  };
-
   TeensyClient();
   ~TeensyClient();
 
@@ -56,7 +56,7 @@ public:
   // --- live LED writes ---
   bool applyMaskedSingle(uint8_t channel, uint32_t mask24, uint8_t value);
   bool applyMaskedRGB(uint32_t mask24, uint8_t r, uint8_t g, uint8_t b);
-  bool applyThemePattern(uint8_t themeId, uint8_t patternId, uint8_t speedPct);
+  bool applyThemePattern(uint8_t themeId, uint8_t patternId);
 
   // --- read requests ---
   bool readWakeReady(bool &ready);

@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "../tools/readerwriter.h"
+#include "../tools/teensyclient.h"
 #include "colorwheelpicker.h"
 
 class ImageButton;
