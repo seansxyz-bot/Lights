@@ -60,6 +60,10 @@ private:
   void stopLightShow();
 
 private:
+  std::atomic<bool> m_themeSendBusy{false};
+
+  void sendThemeToTeensyAsync(int themeId, const std::string &themeName,
+                              const std::vector<RGB_Color> &colors);
   std::unique_ptr<LightShow> m_lightShow;
   bool m_lightShowRunning = false;
 

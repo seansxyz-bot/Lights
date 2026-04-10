@@ -562,14 +562,21 @@ void MainWindow::showDeltaGroupPage() {
   m_deltaGroupPage->signal_group_color_changed().connect(
       [this](int group, int r, int g, int b) {
         m_groupSelection = group;
+        std::string maskString = "";
         for (int i = 0; i < NUM_OF_LEDS; i++) {
           if (m_ledInfo[i].group == group) {
+            maskString += '1';
             m_ledInfo[i].redVal = r;
             m_ledInfo[i].grnVal = g;
             m_ledInfo[i].bluVal = b;
-          }
+          } else
+            maskString += '0';
         }
         writeLEDInfo(SETTINGS_PATH, m_ledInfo);
+        auto mask = TeensyClient::mask24FromBitString(maskString);
+        m_teensyClient.applyMaskedRGB(mask, static_cast<uint8_t>(r),
+                                      static_cast<uint8_t>(g),
+                                      static_cast<uint8_t>(b));
       });
 
   m_deltaGroupPage->signal_done().connect([this]() { showHomePage(); });
@@ -1193,22 +1200,21 @@ void MainWindow::showEditThemePage(int themeId) {
   m_editThemePage = Gtk::manage(new EditThemePage(
       std::string(ICON_PATH), *it, COLOR_PICKER_SIZE, COLOR_BAR_SIZE, 96));
 
-  m_editThemePage->signal_save_requested().connect(
-      [this, themeId](Theme updatedTheme) {
-        auto it2 = std::find_if(m_themes.begin(), m_themes.end(),
-                                [&updatedTheme](const Theme &t) {
-                                  return t.id == updatedTheme.id;
-                                });
+  m_editThemePage->signal_save_requested().connect([this, themeId](
+                                                       Theme updatedTheme) {
+    auto it2 = std::find_if(
+        m_themes.begin(), m_themes.end(),
+        [&updatedTheme](const Theme &t) { return t.id == updatedTheme.id; });
 
-        if (it2 != m_themes.end()) {
-          *it2 = updatedTheme;
-          writeThemeColors(std::string(SETTINGS_PATH), m_themes);
-          m_teensyClient.sendThemeColors(themeId, updatedTheme.colors);
-          LOG_INFO() << "Theme saved: " << updatedTheme.name;
-        }
+    if (it2 != m_themes.end()) {
+      *it2 = updatedTheme;
+      writeThemeColors(std::string(SETTINGS_PATH), m_themes);
+      sendThemeToTeensyAsync(themeId, updatedTheme.name, updatedTheme.colors);
+      LOG_INFO() << "Theme saved: " << updatedTheme.name;
+    }
 
-        showEditThemesPage();
-      });
+    showEditThemesPage();
+  });
 
   m_editThemePage->signal_cancel_requested().connect(
       [this]() { showEditThemesPage(); });
@@ -1312,6 +1318,61 @@ void MainWindow::stopLightShow() {
   m_lightShowRunning = false;
 
   // send to teensy
+}
+
+void MainWindow::sendThemeToTeensyAsync(int themeId,
+                                        const std::string &themeName,
+                                        const std::vector<RGB_Color> &colors) {
+
+  if (m_themeSendBusy.exchange(true)) {
+    showShortToast("Theme update already running");
+    return;
+  }
+
+  std::thread([this, themeId, themeName, colors]() {
+    bool ok = false;
+    std::string msg;
+
+    do {
+      if (!m_teensyClient.sendThemeColors(static_cast<uint8_t>(themeId),
+                                          colors)) {
+        msg = "Failed to send '" + themeName + "'";
+        break;
+      }
+
+      uint8_t status = TeensyClient::FILE_ERROR;
+
+      for (int i = 0; i < 20; ++i) {
+        if (!m_teensyClient.readFileStatus(status)) {
+          msg = "Failed to read Teensy status";
+          break;
+        }
+
+        if (status == TeensyClient::FILE_SUCCESS) {
+          ok = true;
+          msg = "Theme '" + themeName + "' updated";
+          break;
+        }
+
+        if (status == TeensyClient::FILE_ERROR) {
+          msg = "Theme '" + themeName + "' failed";
+          break;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+      }
+
+      if (!ok && msg.empty()) {
+        msg = "Theme '" + themeName + "' timed out";
+      }
+
+    } while (false);
+
+    Glib::signal_idle().connect_once([this, msg]() {
+      showShortToast(msg);
+      m_themeSendBusy = false;
+    });
+  }).detach();
 }
 
 MainWindow::~MainWindow() {
