@@ -1,6 +1,7 @@
 #pragma once
 
 #include "httphelper.h"
+#include "logger.h"
 #include "teensyclient.h"
 
 #if (UBUNTU == 1)

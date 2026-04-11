@@ -249,8 +249,9 @@ static bool execSQL(sqlite3 *db, const char *sql) {
 }
 
 std::vector<Theme> readThemeColors(const std::string &path) {
-  const std::string dbPath = path + "/themes.db";
+  const std::string dbPath = path + "/lights.db";
   std::cout << dbPath << std::endl;
+
   std::vector<Theme> out;
   sqlite3 *db = nullptr;
 
@@ -269,7 +270,8 @@ std::vector<Theme> readThemeColors(const std::string &path) {
 
   sqlite3_stmt *themeStmt = nullptr;
   if (sqlite3_prepare_v2(db, themeSql, -1, &themeStmt, nullptr) != SQLITE_OK) {
-    std::cerr << "Failed to prepare theme query\n";
+    std::cerr << "Failed to prepare theme query: " << sqlite3_errmsg(db)
+              << "\n";
     sqlite3_close(db);
     return out;
   }
@@ -289,12 +291,13 @@ std::vector<Theme> readThemeColors(const std::string &path) {
     SELECT r, g, b
     FROM theme_colors
     WHERE theme_id = ?
-    ORDER BY color_index
+    ORDER BY color_order
   )";
 
   sqlite3_stmt *colorStmt = nullptr;
   if (sqlite3_prepare_v2(db, colorSql, -1, &colorStmt, nullptr) != SQLITE_OK) {
-    std::cerr << "Failed to prepare color query\n";
+    std::cerr << "Failed to prepare color query: " << sqlite3_errmsg(db)
+              << "\n";
     sqlite3_close(db);
     return out;
   }
@@ -306,9 +309,9 @@ std::vector<Theme> readThemeColors(const std::string &path) {
 
     while (sqlite3_step(colorStmt) == SQLITE_ROW) {
       RGB_Color c;
-      c.r = sqlite3_column_int(colorStmt, 0);
-      c.g = sqlite3_column_int(colorStmt, 1);
-      c.b = sqlite3_column_int(colorStmt, 2);
+      c.r = static_cast<uint8_t>(sqlite3_column_int(colorStmt, 0));
+      c.g = static_cast<uint8_t>(sqlite3_column_int(colorStmt, 1));
+      c.b = static_cast<uint8_t>(sqlite3_column_int(colorStmt, 2));
       theme.colors.push_back(c);
     }
 
