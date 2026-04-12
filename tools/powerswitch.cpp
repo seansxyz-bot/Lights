@@ -3,6 +3,19 @@
 #include "logger.h"
 
 #include <chrono>
+#include <gpiod.h>
+
+namespace {
+
+// Your hardware logic:
+// GPIO 9  (pin 21 / TEENSY_SWITCH): LOW = OFF, HIGH = ON
+// GPIO 10 (pin 19 / SR_SWITCH):     HIGH = OFF, LOW = ON
+
+constexpr int teensyValueForEnabled(bool enabled) { return enabled ? 1 : 0; }
+
+constexpr int srValueForEnabled(bool enabled) { return enabled ? 0 : 1; }
+
+} // namespace
 
 PowerSwitch::PowerSwitch(const std::string &chipName) : m_chipName(chipName) {}
 
@@ -42,12 +55,12 @@ void PowerSwitch::stop() {
 }
 
 void PowerSwitch::setEnabled(Options &options, bool enabled) {
-  Logger::info() << "Power Switched to " << (enabled ? "On" : "Off");
+  Logger::info() << "Power switched to " << (enabled ? "On" : "Off");
 
   {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_pendingEnabled = enabled;
-    options.on = enabled;
+    options.on = enabled ? 1 : 0;
     writeOptions(SETTINGS_PATH, options);
   }
 
@@ -55,6 +68,40 @@ void PowerSwitch::setEnabled(Options &options, bool enabled) {
 }
 
 void PowerSwitch::threadMain() {
+  gpiod_chip *chip = gpiod_chip_open_by_name(m_chipName.c_str());
+  if (!chip) {
+    LOG_ERROR() << "PowerSwitch: failed to open chip " << m_chipName;
+    return;
+  }
+
+  gpiod_line *teensyLine = gpiod_chip_get_line(chip, TEENSY_SWITCH);
+  gpiod_line *srLine = gpiod_chip_get_line(chip, SR_SWITCH);
+
+  if (!teensyLine || !srLine) {
+    LOG_ERROR() << "PowerSwitch: failed to get GPIO lines " << TEENSY_SWITCH
+                << " and/or " << SR_SWITCH;
+    gpiod_chip_close(chip);
+    return;
+  }
+
+  // Safe startup state = OFF
+  if (gpiod_line_request_output(teensyLine, "lights-powerswitch",
+                                teensyValueForEnabled(false)) < 0) {
+    LOG_ERROR() << "PowerSwitch: failed to request TEENSY_SWITCH as output";
+    gpiod_chip_close(chip);
+    return;
+  }
+
+  if (gpiod_line_request_output(srLine, "lights-powerswitch",
+                                srValueForEnabled(false)) < 0) {
+    LOG_ERROR() << "PowerSwitch: failed to request SR_SWITCH as output";
+    gpiod_line_release(teensyLine);
+    gpiod_chip_close(chip);
+    return;
+  }
+
+  LOG_INFO() << "PowerSwitch: GPIO ready. Safe default = OFF";
+
   while (true) {
     std::optional<bool> pending;
 
@@ -74,14 +121,40 @@ void PowerSwitch::threadMain() {
     if (!pending.has_value())
       continue;
 
-    LOG_INFO() << "PowerSwitch: state set to " << (*pending ? "ON" : "OFF");
+    const bool enabled = *pending;
 
-    // TODO: actual GPIO hardware switching here
+    LOG_INFO() << "PowerSwitch: setting state to " << (enabled ? "ON" : "OFF");
 
-    if (*pending) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // Order matters a little. On power-up, bring Teensy first, then SR.
+    // On power-down, drop SR first, then Teensy.
+    int rc1 = 0;
+    int rc2 = 0;
+
+    if (enabled) {
+      rc1 = gpiod_line_set_value(teensyLine, teensyValueForEnabled(true));
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+      rc2 = gpiod_line_set_value(srLine, srValueForEnabled(true));
+    } else {
+      rc1 = gpiod_line_set_value(srLine, srValueForEnabled(false));
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+      rc2 = gpiod_line_set_value(teensyLine, teensyValueForEnabled(false));
     }
 
-    m_signalPowerChanged.emit(*pending);
+    if (rc1 < 0 || rc2 < 0) {
+      LOG_ERROR() << "PowerSwitch: failed to set GPIO values";
+      continue;
+    }
+
+    m_signalPowerChanged.emit(enabled);
   }
+
+  // Safe shutdown state = OFF
+  gpiod_line_set_value(srLine, srValueForEnabled(false));
+  gpiod_line_set_value(teensyLine, teensyValueForEnabled(false));
+
+  gpiod_line_release(srLine);
+  gpiod_line_release(teensyLine);
+  gpiod_chip_close(chip);
+
+  LOG_INFO() << "PowerSwitch: stopped and set outputs to OFF";
 }

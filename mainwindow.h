@@ -24,6 +24,7 @@
 #include "gui/toastmessage.h"
 #include "threads/doorbellthread.h"
 #include "threads/mobilelightspoller.h"
+#include "tools/ampswitch.h"
 #include "tools/bluezagent.h"
 #include "tools/btcontrol.h"
 #include "tools/gpiohelper.h"
@@ -87,6 +88,7 @@ private:
   GPIOHelper gpio;
   BTControl m_btControl;
   BluezAgent m_bluezAgent;
+  AmpSwitch m_ampSwitch;
 
   // ---------- main shell ----------
   Gtk::Overlay m_overlay;
@@ -142,6 +144,7 @@ private:
 
 private:
   // ---------- setup ----------
+  void initializeStartupState();
   void loadSettings();
   void startThreads();
   void startConnections();
@@ -153,7 +156,6 @@ private:
   void onMobileOptionsChanged(const Options &options);
   void onMobileLEDsChanged(const std::vector<LEDData> &ledInfo);
   void onMobileSchedulesChanged(const std::vector<Schedule> &schedule);
-  void setBluetoothEnabled(bool enabled);
   void disconnectAllBluetoothDevices();
   bool onBluetoothPollTick();
   void stopBluetoothPolling();

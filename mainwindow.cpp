@@ -32,11 +32,10 @@ MainWindow::MainWindow()
   LOG_INFO() << "Logger initialized";
   LOG_INFO() << "MainWindow ctor begin";
 
-  m_bluetoothState = 0;
-
   fullscreen();
 
   loadSettings();
+  initializeStartupState();
   buildShell();
   startThreads();
   startConnections();
@@ -54,6 +53,19 @@ MainWindow::MainWindow()
   LOG_INFO() << "MainWindow ctor complete";
 }
 
+void MainWindow::initializeStartupState() {
+  m_ampSwitch.setEnabled(false);
+
+  m_btControl.disconnectAllDevices();
+  m_btControl.stopScan();
+  m_btControl.setDiscoverable(false);
+  m_btControl.setPairable(false);
+  m_bluezAgent.stop();
+  m_btControl.powerOff();
+
+  m_bluetoothState = 0;
+}
+
 void MainWindow::loadSettings() {
   writeToServer = true;
   LOG_INFO() << "Loading settings from " << SETTINGS_PATH;
@@ -65,8 +77,6 @@ void MainWindow::loadSettings() {
 
   LOG_INFO() << "Settings loaded. leds=" << m_ledInfo.size()
              << " schedule_entries=" << m_schedule.size();
-  if (m_options.on)
-    m_powerThread.setEnabled(m_options, true);
 
   if (!m_btControl.init()) {
     LOG_ERROR() << "BTControl init failed";
@@ -82,6 +92,8 @@ void MainWindow::startThreads() {
 
   LOG_INFO() << "Starting PowerSwitch";
   m_powerThread.start();
+  if (m_options.on)
+    m_powerThread.setEnabled(m_options, true);
   LOG_INFO() << "Starting DoorbellThread";
   m_doorbellThread.start();
   m_mobileLightsPoller =
@@ -373,6 +385,9 @@ void MainWindow::startBluetoothTransition(bool enable) {
         toast = m_btControl.lastError().empty() ? "Failed to power on bluetooth"
                                                 : m_btControl.lastError();
       } else {
+        if (!m_ampSwitch.setEnabled(true)) {
+          LOG_WARN() << "Failed to turn amp on: " << m_ampSwitch.lastError();
+        }
         m_bluetoothState = 1;
 
         if (!m_bluezAgent.start("NoInputNoOutput")) {
@@ -396,6 +411,9 @@ void MainWindow::startBluetoothTransition(bool enable) {
       }
 
     } else {
+      if (!m_ampSwitch.setEnabled(false)) {
+        LOG_WARN() << "Failed to turn amp off: " << m_ampSwitch.lastError();
+      }
       m_btControl.disconnectAllDevices();
       m_btControl.stopScan();
       m_btControl.setDiscoverable(false);
@@ -407,6 +425,7 @@ void MainWindow::startBluetoothTransition(bool enable) {
                     ? "Failed to power off bluetooth"
                     : m_btControl.lastError();
       } else {
+
         m_bluetoothState = 0;
         toast = "Bluetooth off";
         success = true;
@@ -750,69 +769,6 @@ void MainWindow::showGameDayPage() {
         return false;
       },
       30);
-}
-
-void MainWindow::setBluetoothEnabled(bool enabled) {
-  LOG_INFO() << "Bluetooth toggled -> " << (enabled ? "ON" : "OFF");
-
-  if (enabled) {
-    if (!m_btControl.powerOn()) {
-      m_bluetoothState = 0;
-      showShortToast(m_btControl.lastError().empty()
-                         ? "Failed to power on bluetooth"
-                         : m_btControl.lastError());
-      return;
-    }
-
-    m_bluetoothState = 1;
-    showShortToast("Bluetooth on");
-
-    if (!m_bluezAgent.start("NoInputNoOutput")) {
-      LOG_WARN() << "BluezAgent start failed: " << m_bluezAgent.lastError();
-      if (!m_bluezAgent.lastError().empty())
-        showShortToast(m_bluezAgent.lastError());
-    }
-
-    if (!m_btControl.setPairable(true)) {
-      LOG_WARN() << "Failed to set bluetooth pairable on";
-    }
-
-    if (!m_btControl.setDiscoverable(true)) {
-      LOG_WARN() << "Failed to set bluetooth discoverable on";
-    }
-
-    if (!m_btControl.startScan()) {
-      LOG_WARN() << "Failed to start bluetooth scan";
-    } else {
-      showShortToast("Bluetooth pairing mode on");
-    }
-
-    if (m_bluetoothPollConn.connected())
-      m_bluetoothPollConn.disconnect();
-
-    m_bluetoothPollConn = Glib::signal_timeout().connect_seconds(
-        sigc::mem_fun(*this, &MainWindow::onBluetoothPollTick), 2);
-
-    return;
-  }
-
-  stopBluetoothPolling();
-
-  m_btControl.disconnectAllDevices();
-  m_btControl.stopScan();
-  m_btControl.setDiscoverable(false);
-  m_btControl.setPairable(false);
-  m_bluezAgent.stop();
-
-  if (!m_btControl.powerOff()) {
-    showShortToast(m_btControl.lastError().empty()
-                       ? "Failed to power off bluetooth"
-                       : m_btControl.lastError());
-    return;
-  }
-
-  m_bluetoothState = 0;
-  showShortToast("Bluetooth off");
 }
 
 bool MainWindow::onBluetoothPollTick() {
@@ -1378,21 +1334,28 @@ void MainWindow::sendThemeToTeensyAsync(int themeId,
 MainWindow::~MainWindow() {
   LOG_INFO() << "MainWindow dtor begin";
 
+  stopLightShow();
+
+  if (!m_ampSwitch.setEnabled(false)) {
+    LOG_WARN() << "Failed to turn amp off in dtor: " << m_ampSwitch.lastError();
+  }
+
   stopBluetoothPolling();
   m_bluezAgent.stop();
 
   if (m_btWorker.joinable())
     m_btWorker.join();
 
-  if (m_bluetoothState) {
-    m_btControl.disconnectAllDevices();
-    m_btControl.powerOff();
-  }
+  m_btControl.stopScan();
+  m_btControl.setDiscoverable(false);
+  m_btControl.setPairable(false);
+  m_btControl.disconnectAllDevices();
+  m_btControl.powerOff();
 
   if (m_toastHideConn.connected())
     m_toastHideConn.disconnect();
 
-  m_powerThread.stop(); // 👈 ADD THIS
+  m_powerThread.stop();
 
   if (m_idleClockConn.connected())
     m_idleClockConn.disconnect();
@@ -1408,6 +1371,13 @@ MainWindow::~MainWindow() {
 
   if (m_scheduledEventConn.connected())
     m_scheduledEventConn.disconnect();
+
+  m_doorbellThread.stop();
+
+  if (m_mobileLightsPoller)
+    m_mobileLightsPoller->stop();
+
+  ClockThread::instance().stop();
 
   destroyAllTemporaryPages();
 
