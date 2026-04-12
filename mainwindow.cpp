@@ -26,6 +26,13 @@
 
 // showGameDayPage();  // use later for animation
 
+static bool setBluetoothRfkillBlocked(bool blocked) {
+  const int rc =
+      std::system(blocked ? "rfkill block bluetooth >/dev/null 2>&1"
+                          : "rfkill unblock bluetooth >/dev/null 2>&1");
+  return rc == 0;
+}
+
 MainWindow::MainWindow()
     : m_btControl(std::string(SETTINGS_PATH) + "/lights.db") {
   Logger::useStdOutAndFile(LOG_FILE_MSTR, true);
@@ -54,10 +61,21 @@ MainWindow::MainWindow()
 }
 
 void MainWindow::initializeStartupState() {
-  m_ampSwitch.setEnabled(false);
+
+  if (!m_ampSwitch.setEnabled(false)) {
+    LOG_WARN() << "Failed to turn amp off at startup: "
+               << m_ampSwitch.lastError();
+  }
   m_bluetoothState = 0;
-  Glib::signal_idle().connect_once(
-      [this]() { startBluetoothTransition(false); });
+
+  LOG_INFO() << "BT powerOn: rfkill unblock bluetooth";
+  setBluetoothRfkillBlocked(false);
+
+  Glib::signal_idle().connect_once([this]() {
+    if (!m_shuttingDown) {
+      startBluetoothTransition(false);
+    }
+  });
 }
 
 void MainWindow::loadSettings() {
@@ -1230,34 +1248,37 @@ void MainWindow::onBluetoothPowerChanged(bool enabled) {
 }
 
 void MainWindow::updateLightShowState() {
+  if (m_shuttingDown)
+    return;
+
   const bool shouldRun = (m_options.on && m_bluetoothState);
-  std::cout << "Start Lightshow: " << (shouldRun ? "True" : "False")
-            << std::endl;
+
+  LOG_INFO() << "LightShow shouldRun=" << shouldRun
+             << " running=" << m_lightShowRunning;
 
   if (shouldRun) {
-    if (!m_lightShowRunning) {
+    if (!m_lightShowRunning)
       startLightShow();
-    }
   } else {
-    if (m_lightShowRunning) {
+    if (m_lightShowRunning)
       stopLightShow();
-    }
   }
 }
 
 void MainWindow::startLightShow() {
+  std::lock_guard<std::mutex> lock(m_lightShowMutex);
+
   if (m_lightShowRunning)
     return;
 
   LOG_INFO() << "Starting LightShow";
 
-  if (!m_lightShow) {
-    m_lightShow = std::make_unique<LightShow>(
-        NUM_OF_LEDS, "alsa_output.platform-soc_sound.pro-output-0.monitor");
-  }
+  m_lightShow = std::make_unique<LightShow>(
+      NUM_OF_LEDS, "alsa_output.platform-soc_sound.pro-output-0.monitor");
 
   if (!m_lightShow->start()) {
     LOG_ERROR() << "LightShow failed to start";
+    m_lightShow.reset();
     return;
   }
 
@@ -1265,6 +1286,8 @@ void MainWindow::startLightShow() {
 }
 
 void MainWindow::stopLightShow() {
+  std::lock_guard<std::mutex> lock(m_lightShowMutex);
+
   if (!m_lightShowRunning)
     return;
 
@@ -1272,11 +1295,14 @@ void MainWindow::stopLightShow() {
 
   if (m_lightShow) {
     m_lightShow->stop();
+    m_lightShow.reset();
   }
 
   m_lightShowRunning = false;
 
   // send to teensy
+  // for(int i =0; i < m_ledInfo.size(); i++)
+  // m_teensyClient.applyMaskedSingle();
 }
 
 void MainWindow::sendThemeToTeensyAsync(int themeId,
@@ -1338,6 +1364,7 @@ MainWindow::~MainWindow() {
   LOG_INFO() << "MainWindow dtor begin";
 
   m_shuttingDown = true;
+  m_bluetoothState = 0;
 
   stopLightShow();
 
@@ -1349,8 +1376,14 @@ MainWindow::~MainWindow() {
 
   if (m_btWorker.joinable()) {
     LOG_WARN() << "Bluetooth worker still running during shutdown; detaching";
-    m_btWorker.detach();
+    m_btWorker.join();
   }
+  if (!setBluetoothRfkillBlocked(true)) {
+    LOG_WARN() << "Failed to rfkill-block bluetooth in dtor";
+  } else {
+    LOG_INFO() << "Bluetooth rfkill-blocked in dtor";
+  }
+
   if (m_toastHideConn.connected())
     m_toastHideConn.disconnect();
 
@@ -1374,10 +1407,6 @@ MainWindow::~MainWindow() {
 
   if (m_mobileLightsPoller)
     m_mobileLightsPoller->stop();
-  std::cout << "WTF" << std::endl;
-
-  // ClockThread::instance().stop();
-  std::cout << "WTF" << std::endl;
 
   destroyAllTemporaryPages();
 

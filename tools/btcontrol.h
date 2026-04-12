@@ -1,5 +1,8 @@
 #pragma once
 
+#include "bluezclient.h"
+
+#include "bluezagent.h"
 #include <optional>
 #include <sigc++/sigc++.h>
 #include <string>
@@ -70,6 +73,9 @@ private:
   mutable std::string m_lastStatus;
   mutable std::string m_lastError;
 
+  mutable BluezClient m_bluez;
+  BluezAgent m_agent;
+
   sigc::signal<void, bool> m_signalPowerChanged;
 
   void setStatus(const std::string &msg) const;
@@ -80,12 +86,9 @@ private:
   bool markSeenNow(const std::string &macAddress) const;
   bool setConnectedState(const std::string &macAddress, bool connected) const;
   bool setSystemAlias(const std::string &name);
+
   static std::string nowUtc();
   static std::string trim(const std::string &s);
   static bool isValidMacAddress(const std::string &macAddress);
-  static bool runCommand(const std::string &cmd, std::string *output = nullptr);
-  static bool parseBluetoothctlDevices(const std::string &text,
-                                       std::vector<BTDevice> &devices);
-  static bool parseBluetoothctlInfo(const std::string &macAddress,
-                                    const std::string &text, BTDevice &device);
+  static BTDevice fromBluezDevice(const BluezDeviceInfo &d);
 };

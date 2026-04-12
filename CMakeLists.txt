@@ -120,6 +120,7 @@ set(SOURCES
 add_executable(LightingControl ${SOURCES}
     tools/teensyclient.h tools/teensyclient.cpp
     tools/ampswitch.h tools/ampswitch.cpp
+    tools/bluezclient.h tools/bluezclient.cpp
     )
 
 # Includes

@@ -63,6 +63,7 @@ private:
 private:
   std::atomic<bool> m_shuttingDown{false};
   std::atomic<bool> m_themeSendBusy{false};
+  std::mutex m_lightShowMutex;
 
   void sendThemeToTeensyAsync(int themeId, const std::string &themeName,
                               const std::vector<RGB_Color> &colors);

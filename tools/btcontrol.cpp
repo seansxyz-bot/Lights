@@ -4,9 +4,8 @@
 
 #include <sqlite3.h>
 
-#include <array>
+#include <algorithm>
 #include <chrono>
-#include <cstdio>
 #include <ctime>
 #include <iomanip>
 #include <optional>
@@ -52,7 +51,29 @@ BTControl::BTControl(const std::string &dbPath) : m_dbPath(dbPath) {}
 
 bool BTControl::init() {
   LOG_INFO() << "BTControl init dbPath=" << m_dbPath;
-  return createTables();
+  if (!createTables())
+    return false;
+
+  if (!m_bluez.init()) {
+    LOG_WARN() << "BluezClient init failed: " << m_bluez.lastError();
+    // Keep DB usable even if bluetooth stack is down.
+  }
+
+  return true;
+}
+
+BTDevice BTControl::fromBluezDevice(const BluezDeviceInfo &d) {
+  BTDevice out;
+  out.macAddress = d.macAddress;
+  out.name = !d.name.empty() ? d.name : d.alias;
+  out.deviceType = d.icon;
+  out.trusted = d.trusted;
+  out.paired = d.paired;
+  out.blocked = d.blocked;
+  out.connected = d.connected;
+  out.discovered = d.discovered;
+  out.lastSeenUtc = nowUtc();
+  return out;
 }
 
 bool BTControl::createTables() const {
@@ -118,97 +139,6 @@ std::string BTControl::trim(const std::string &s) {
 bool BTControl::isValidMacAddress(const std::string &macAddress) {
   static const std::regex kMacRegex(R"(^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$)");
   return std::regex_match(macAddress, kMacRegex);
-}
-
-bool BTControl::runCommand(const std::string &cmd, std::string *output) {
-  std::array<char, 512> buffer{};
-
-  FILE *pipe = popen(cmd.c_str(), "r");
-  if (!pipe) {
-    LOG_ERROR() << "BT popen failed for command: " << cmd;
-    return false;
-  }
-
-  std::ostringstream oss;
-  while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) !=
-         nullptr) {
-    oss << buffer.data();
-  }
-
-  const int rc = pclose(pipe);
-  const std::string out = oss.str();
-
-  if (output)
-    *output = out;
-
-  return rc == 0;
-}
-
-bool BTControl::parseBluetoothctlDevices(const std::string &text,
-                                         std::vector<BTDevice> &devices) {
-  std::istringstream iss(text);
-  std::string line;
-
-  while (std::getline(iss, line)) {
-    line = trim(line);
-
-    if (line.rfind("Device ", 0) != 0)
-      continue;
-
-    std::istringstream ls(line);
-    std::string word;
-    BTDevice d;
-
-    ls >> word;
-    ls >> d.macAddress;
-
-    std::string rest;
-    std::getline(ls, rest);
-    d.name = trim(rest);
-    d.lastSeenUtc = nowUtc();
-    d.discovered = true;
-
-    if (isValidMacAddress(d.macAddress))
-      devices.push_back(d);
-  }
-
-  return true;
-}
-
-bool BTControl::parseBluetoothctlInfo(const std::string &macAddress,
-                                      const std::string &text,
-                                      BTDevice &device) {
-  device.macAddress = macAddress;
-
-  std::istringstream iss(text);
-  std::string line;
-
-  while (std::getline(iss, line)) {
-    line = trim(line);
-
-    auto readBool = [](const std::string &value) { return value == "yes"; };
-
-    if (line.rfind("Name:", 0) == 0) {
-      device.name = trim(line.substr(5));
-    } else if (line.rfind("Alias:", 0) == 0 && device.name.empty()) {
-      device.name = trim(line.substr(6));
-    } else if (line.rfind("Icon:", 0) == 0) {
-      device.deviceType = trim(line.substr(5));
-    } else if (line.rfind("Trusted:", 0) == 0) {
-      device.trusted = readBool(trim(line.substr(8)));
-    } else if (line.rfind("Paired:", 0) == 0) {
-      device.paired = readBool(trim(line.substr(7)));
-    } else if (line.rfind("Bonded:", 0) == 0) {
-      device.paired = readBool(trim(line.substr(7)));
-    } else if (line.rfind("Blocked:", 0) == 0) {
-      device.blocked = readBool(trim(line.substr(8)));
-    } else if (line.rfind("Connected:", 0) == 0) {
-      device.connected = readBool(trim(line.substr(10)));
-    }
-  }
-
-  device.lastSeenUtc = nowUtc();
-  return true;
 }
 
 bool BTControl::upsertDevice(const BTDevice &device) const {
@@ -355,160 +285,151 @@ bool BTControl::markConnectedNow(const std::string &macAddress) const {
 }
 
 bool BTControl::powerOn() {
-  std::string out;
+  bool powered = false;
 
-  runCommand("rfkill unblock bluetooth", nullptr);
-
-  for (int attempt = 0; attempt < 8; ++attempt) {
-    out.clear();
-
-    if (runCommand("bluetoothctl power on", &out)) {
-      for (int i = 0; i < 10; ++i) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(250));
-        if (isPoweredOn()) {
-          if (!setSystemAlias("Light Controller")) {
-            LOG_WARN() << "Bluetooth powered on but failed to set alias";
-          } else
-            setStatus("Bluetooth on");
-
-          m_signalPowerChanged.emit(true);
-          return true;
-        }
-      }
-    } else {
-      const std::string trimmed = trim(out);
-
-      if (trimmed.find("org.bluez.Error.Busy") != std::string::npos) {
-        LOG_WARN() << "BT power on busy, retrying... attempt=" << attempt + 1;
-
-        for (int i = 0; i < 6; ++i) {
-          std::this_thread::sleep_for(std::chrono::milliseconds(250));
-          if (isPoweredOn()) {
-            if (!setSystemAlias("Light Controller")) {
-              LOG_WARN() << "Bluetooth powered on but failed to set alias";
-            } else
-              setStatus("Bluetooth on");
-            return true;
-          }
-        }
-      } else {
-        setError(trimmed.empty() ? "Failed to power on bluetooth" : trimmed);
-        return false;
-      }
-    }
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(300));
-  }
-
-  setError("Bluetooth did not report powered on");
-  return false;
-}
-
-bool BTControl::powerOff() {
-  std::string out;
-
-  for (int attempt = 0; attempt < 8; ++attempt) {
-    out.clear();
-
-    if (runCommand("bluetoothctl power off", &out)) {
-      runCommand("rfkill block bluetooth", nullptr);
-
-      for (int i = 0; i < 10; ++i) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(250));
-        if (!isPoweredOn()) {
-          setStatus("Bluetooth off");
-          m_signalPowerChanged.emit(false);
-          return true;
-        }
-      }
-    } else {
-      const std::string trimmed = trim(out);
-
-      if (trimmed.find("org.bluez.Error.Busy") != std::string::npos) {
-        LOG_WARN() << "BT power off busy, retrying... attempt=" << attempt + 1;
-
-        for (int i = 0; i < 6; ++i) {
-          std::this_thread::sleep_for(std::chrono::milliseconds(250));
-          if (!isPoweredOn()) {
-            setStatus("Bluetooth off");
-            m_signalPowerChanged.emit(false);
-            return true;
-          }
-        }
-      } else {
-        setError(trimmed.empty() ? "Failed to power off bluetooth" : trimmed);
-        return false;
-      }
-    }
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(300));
-  }
-
-  if (!isPoweredOn()) {
-    setStatus("Bluetooth off");
+  LOG_INFO() << "BT powerOn: checking current state";
+  if (m_bluez.isPoweredOn(&powered) && powered) {
+    setStatus("Bluetooth on");
+    m_signalPowerChanged.emit(true);
     return true;
   }
 
-  setError("Bluetooth did not report powered off");
-  return false;
-}
-
-bool BTControl::isPoweredOn() const {
-  std::string out;
-  if (!runCommand("bluetoothctl show", &out)) {
-    LOG_WARN() << "BT show failed while checking power state";
+  LOG_INFO() << "BT powerOn: setting Powered=true";
+  if (!m_bluez.setPowered(true)) {
+    setError(m_bluez.lastError().empty() ? "Failed to power on bluetooth"
+                                         : m_bluez.lastError());
     return false;
   }
 
-  std::istringstream iss(out);
-  std::string line;
+  std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-  while (std::getline(iss, line)) {
-    line = trim(line);
-    if (line.rfind("Powered:", 0) == 0) {
-      const bool powered = (trim(line.substr(8)) == "yes");
-      return powered;
-    }
+  LOG_INFO() << "BT powerOn: rechecking current state";
+  if (!m_bluez.isPoweredOn(&powered) || !powered) {
+    setError("Bluetooth did not report powered on");
+    return false;
   }
 
-  LOG_WARN() << "BT Powered state not found in bluetoothctl show output";
-  return false;
+  if (!setSystemAlias("Light Controller")) {
+    LOG_WARN() << "Bluetooth powered on but failed to set alias";
+  }
+
+  if (!enableAgent("NoInputNoOutput")) {
+    LOG_WARN() << "Failed to enable BT agent: " << lastError();
+  }
+
+  if (!setPairable(true)) {
+    LOG_WARN() << "Failed to set pairable";
+  }
+
+  if (!scanPairedDevices()) {
+    LOG_WARN() << "Failed to scan paired devices after power on";
+  }
+
+  if (!trustAllPairedDevices()) {
+    LOG_WARN() << "Failed to trust paired devices after power on";
+  }
+
+  if (!autoReconnectBestDevice()) {
+    LOG_WARN() << "No paired BT device auto-reconnected: " << lastError();
+  }
+
+  setStatus("Bluetooth on");
+  m_signalPowerChanged.emit(true);
+  return true;
+}
+
+bool BTControl::powerOff() {
+  bool powered = true;
+  if (m_bluez.isPoweredOn(&powered) && !powered) {
+    setStatus("Bluetooth off");
+    m_signalPowerChanged.emit(false);
+    return true;
+  }
+
+  if (!m_bluez.setPowered(false)) {
+    setError(m_bluez.lastError().empty() ? "Failed to power off bluetooth"
+                                         : m_bluez.lastError());
+    return false;
+  }
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(150));
+
+  if (!m_bluez.isPoweredOn(&powered) || powered) {
+    setError("Bluetooth did not report powered off");
+    return false;
+  }
+
+  setStatus("Bluetooth off");
+  m_signalPowerChanged.emit(false);
+  return true;
+}
+
+bool BTControl::isPoweredOn() const {
+  bool powered = false;
+  if (!m_bluez.isPoweredOn(&powered)) {
+    LOG_WARN() << "BT isPoweredOn failed: " << m_bluez.lastError();
+    return false;
+  }
+  return powered;
 }
 
 bool BTControl::enableAgent(const std::string &capability) {
-  std::string out;
-  return runCommand("bluetoothctl agent " + capability, &out);
+  if (!m_agent.start(capability)) {
+    setError(m_agent.lastError().empty() ? "Failed to start BT agent"
+                                         : m_agent.lastError());
+    return false;
+  }
+  return true;
 }
 
 bool BTControl::setDefaultAgent() {
-  std::string out;
-  return runCommand("bluetoothctl default-agent", &out);
+  if (!m_agent.isActive()) {
+    setError("BT agent is not active");
+    return false;
+  }
+  return true;
 }
 
 bool BTControl::setPairable(bool enabled) {
-  std::string out;
-  return runCommand(
-      std::string("bluetoothctl pairable ") + (enabled ? "on" : "off"), &out);
+  if (!m_bluez.setPairable(enabled)) {
+    setError(m_bluez.lastError().empty() ? "Failed to set pairable"
+                                         : m_bluez.lastError());
+    return false;
+  }
+  clearerr(stdin);
+  return true;
 }
 
 bool BTControl::setDiscoverable(bool enabled) {
-  std::string out;
-  return runCommand(std::string("bluetoothctl discoverable ") +
-                        (enabled ? "on" : "off"),
-                    &out);
+  if (!m_bluez.setDiscoverable(enabled)) {
+    setError(m_bluez.lastError().empty() ? "Failed to set discoverable"
+                                         : m_bluez.lastError());
+    return false;
+  }
+  return true;
 }
 
 bool BTControl::startScan() {
   if (!isPoweredOn())
     return false;
 
-  std::string out;
-  return runCommand("bluetoothctl scan on", &out);
+  if (!m_bluez.startDiscovery()) {
+    setError(m_bluez.lastError().empty() ? "Failed to start scan"
+                                         : m_bluez.lastError());
+    return false;
+  }
+
+  return true;
 }
 
 bool BTControl::stopScan() {
-  std::string out;
-  return runCommand("bluetoothctl scan off", &out);
+  if (!m_bluez.stopDiscovery()) {
+    setError(m_bluez.lastError().empty() ? "Failed to stop scan"
+                                         : m_bluez.lastError());
+    return false;
+  }
+
+  return true;
 }
 
 bool BTControl::scanPairedDevices() {
@@ -517,31 +438,14 @@ bool BTControl::scanPairedDevices() {
     return false;
   }
 
-  std::string out;
-  if (!runCommand("bluetoothctl devices Paired", &out))
-    return false;
+  auto devices = m_bluez.getDevices();
+  for (const auto &d : devices) {
+    if (!d.paired)
+      continue;
 
-  std::vector<BTDevice> devices;
-  parseBluetoothctlDevices(out, devices);
-
-  for (auto &device : devices) {
-    std::string infoOut;
-    if (runCommand("bluetoothctl info " + device.macAddress, &infoOut)) {
-      BTDevice full;
-      parseBluetoothctlInfo(device.macAddress, infoOut, full);
-      if (full.name.empty())
-        full.name = device.name;
-      full.discovered = true;
-
-      if (full.paired || full.trusted || full.connected) {
-        upsertDevice(full);
-      }
-
-    } else {
-      if (device.paired || device.trusted || device.connected) {
-        upsertDevice(device);
-      }
-    }
+    BTDevice full = fromBluezDevice(d);
+    full.discovered = true;
+    upsertDevice(full);
   }
 
   return true;
@@ -553,43 +457,21 @@ bool BTControl::scanAvailableDevices() {
     return false;
   }
 
-  std::string out;
-  if (!runCommand("bluetoothctl devices", &out))
-    return false;
-
-  std::vector<BTDevice> devices;
-  parseBluetoothctlDevices(out, devices);
-
-  for (auto &device : devices) {
-    std::string infoOut;
-    if (runCommand("bluetoothctl info " + device.macAddress, &infoOut)) {
-      BTDevice full;
-      parseBluetoothctlInfo(device.macAddress, infoOut, full);
-      if (full.name.empty())
-        full.name = device.name;
-      full.discovered = true;
-
-      if (full.paired || full.trusted || full.connected) {
-        upsertDevice(full);
-      }
-    } else {
-      if (device.paired || device.trusted || device.connected) {
-        upsertDevice(device);
-      }
-    }
+  auto devices = m_bluez.getDevices();
+  for (const auto &d : devices) {
+    BTDevice full = fromBluezDevice(d);
+    full.discovered = true;
+    upsertDevice(full);
   }
 
   return true;
 }
 
 bool BTControl::setSystemAlias(const std::string &name) {
-  std::string out;
-
-  if (!runCommand("bluetoothctl system-alias \"" + name + "\"", &out)) {
+  if (!m_bluez.setAlias(name)) {
     setError("Failed to set bluetooth name");
     return false;
   }
-
   return true;
 }
 
@@ -599,14 +481,13 @@ bool BTControl::refreshDeviceInfo(const std::string &macAddress) {
     return false;
   }
 
-  std::string out;
-  if (!runCommand("bluetoothctl info " + macAddress, &out))
+  auto device = m_bluez.getDeviceByAddress(macAddress);
+  if (!device)
     return false;
 
-  BTDevice device;
-  parseBluetoothctlInfo(macAddress, out, device);
-  device.discovered = true;
-  return upsertDevice(device);
+  BTDevice d = fromBluezDevice(*device);
+  d.discovered = true;
+  return upsertDevice(d);
 }
 
 bool BTControl::refreshAllKnownDevices() {
@@ -773,9 +654,8 @@ bool BTControl::pairDevice(const std::string &macAddress) {
     return false;
   }
 
-  std::string out;
-  if (!runCommand("bluetoothctl pair " + macAddress, &out)) {
-    setError("Pair failed. Phone may need approval.");
+  if (!m_bluez.pairDevice(macAddress)) {
+    setError(m_bluez.lastError().empty() ? "Pair failed" : m_bluez.lastError());
     return false;
   }
 
@@ -803,24 +683,18 @@ bool BTControl::trustDevice(const std::string &macAddress) {
     return false;
   }
 
-  std::string out;
-  if (!runCommand("bluetoothctl trust " + macAddress, &out)) {
-    setError("Failed to trust device");
+  if (!m_bluez.setTrusted(macAddress, true)) {
+    setError(m_bluez.lastError().empty() ? "Failed to trust device"
+                                         : m_bluez.lastError());
     return false;
   }
 
   if (!refreshDeviceInfo(macAddress)) {
-    setError("Trusted, but failed to refresh device info");
+    setError("Trusted device, but failed to refresh device info");
     return false;
   }
 
-  auto device = getDeviceByMac(macAddress);
-  if (!device || !device->trusted) {
-    setError("Device did not report trusted");
-    return false;
-  }
-
-  setStatus("Trusted: " + (device->name.empty() ? macAddress : device->name));
+  setStatus("Trusted: " + macAddress);
   return true;
 }
 
@@ -835,14 +709,12 @@ bool BTControl::connectDevice(const std::string &macAddress) {
     return false;
   }
 
-  auto known = getDeviceByMac(macAddress);
-  if (known && !known->trusted) {
-    trustDevice(macAddress);
-  }
+  std::string ignore;
+  (void)ignore;
 
-  std::string out;
-  if (!runCommand("bluetoothctl connect " + macAddress, &out)) {
-    setError("Connect failed");
+  if (!m_bluez.connectDevice(macAddress)) {
+    setError(m_bluez.lastError().empty() ? "Connect failed"
+                                         : m_bluez.lastError());
     return false;
   }
 
@@ -865,15 +737,18 @@ bool BTControl::connectDevice(const std::string &macAddress) {
   setStatus("Connected: " + (device->name.empty() ? macAddress : device->name));
   return true;
 }
+
 bool BTControl::disconnectDevice(const std::string &macAddress) {
   if (!isValidMacAddress(macAddress)) {
     LOG_ERROR() << "disconnectDevice invalid MAC: " << macAddress;
     return false;
   }
 
-  std::string out;
-  if (!runCommand("bluetoothctl disconnect " + macAddress, &out))
+  if (!m_bluez.disconnectDevice(macAddress)) {
+    setError(m_bluez.lastError().empty() ? "Disconnect failed"
+                                         : m_bluez.lastError());
     return false;
+  }
 
   refreshDeviceInfo(macAddress);
   setConnectedState(macAddress, false);
@@ -912,9 +787,11 @@ bool BTControl::removeDevice(const std::string &macAddress) {
     return false;
   }
 
-  std::string out;
-  if (!runCommand("bluetoothctl remove " + macAddress, &out))
+  if (!m_bluez.removeDevice(macAddress)) {
+    setError(m_bluez.lastError().empty() ? "Failed to remove device"
+                                         : m_bluez.lastError());
     return false;
+  }
 
   SqliteDB db(m_dbPath);
   if (!db.valid())
@@ -936,6 +813,13 @@ bool BTControl::removeDevice(const std::string &macAddress) {
 }
 
 bool BTControl::autoReconnectBestDevice() {
+  if (!isPoweredOn()) {
+    setError("Bluetooth is off");
+    return false;
+  }
+
+  scanPairedDevices();
+
   auto devices = getDevicesRankedByLastConnected();
 
   for (const auto &device : devices) {
@@ -944,8 +828,8 @@ bool BTControl::autoReconnectBestDevice() {
     if (!device.paired)
       continue;
 
-    if (!device.trusted)
-      trustDevice(device.macAddress);
+    if (device.connected)
+      return true;
 
     if (connectDevice(device.macAddress))
       return true;
@@ -973,18 +857,13 @@ bool BTControl::trustAllPairedDevices() {
     if (!device.paired)
       continue;
 
-    if (device.trusted)
-      continue;
-
-    LOG_INFO() << "Auto-trusting paired BT device: " << device.name << " ["
-               << device.macAddress << "]";
-
     if (!trustDevice(device.macAddress))
       ok = false;
   }
 
   return ok;
 }
+
 void BTControl::setStatus(const std::string &msg) const {
   m_lastStatus = msg;
   m_lastError.clear();

@@ -16,21 +16,36 @@ bool LightShow::start() {
   if (!running_.compare_exchange_strong(expected, true))
     return true;
 
-  capture_ = std::thread(&LightShow::captureLoop_, this);
-  render_ = std::thread(&LightShow::renderLoop_, this);
+  have_frame_.store(false, std::memory_order_release);
+  ringL_.clear();
+  ringR_.clear();
+  ringL_.reserve(NFFT * 4);
+  ringR_.reserve(NFFT * 4);
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(200));
-  return running_.load();
+  initFFTW_();
+
+  if (!initPulse_()) {
+    destroyFFTW_();
+    running_.store(false);
+    return false;
+  }
+
+  render_ = std::thread(&LightShow::renderLoop_, this);
+  return true;
 }
 
 void LightShow::stop() {
   if (!running_.exchange(false))
     return;
 
-  if (capture_.joinable())
-    capture_.join();
+  destroyPulse_();
+
   if (render_.joinable())
     render_.join();
+
+  destroyFFTW_();
+
+  std::cerr << "[LightShow] stopped cleanly\n";
 }
 
 void LightShow::setSource(const std::string &src) {
@@ -82,6 +97,9 @@ void LightShow::initFFTW_() {
                                          static_cast<float>(i)) /
                                         static_cast<float>(NFFT - 1));
   }
+
+  magL_.assign(NFFT / 2 + 1, 0.0f);
+  magR_.assign(NFFT / 2 + 1, 0.0f);
 }
 
 void LightShow::destroyFFTW_() {
@@ -129,11 +147,62 @@ void LightShow::initPersonalities_() {
   }
 }
 
-void LightShow::captureLoop_() {
+bool LightShow::initPulse_() {
   std::string device;
   {
     std::lock_guard<std::mutex> lk(cfg_mtx_);
     device = monitor_;
+  }
+
+  pa_ml_ = pa_threaded_mainloop_new();
+  if (!pa_ml_) {
+    std::cerr << "[LightShow] pa_threaded_mainloop_new failed\n";
+    return false;
+  }
+
+  pa_api_ = pa_threaded_mainloop_get_api(pa_ml_);
+  if (!pa_api_) {
+    std::cerr << "[LightShow] get_api failed\n";
+    destroyPulse_();
+    return false;
+  }
+
+  pa_ctx_ = pa_context_new(pa_api_, "Lights-LightShow");
+  if (!pa_ctx_) {
+    std::cerr << "[LightShow] pa_context_new failed\n";
+    destroyPulse_();
+    return false;
+  }
+
+  pa_context_set_state_callback(pa_ctx_, &LightShow::contextStateCb_, this);
+
+  if (pa_threaded_mainloop_start(pa_ml_) < 0) {
+    std::cerr << "[LightShow] pa_threaded_mainloop_start failed\n";
+    destroyPulse_();
+    return false;
+  }
+
+  pa_threaded_mainloop_lock(pa_ml_);
+
+  if (pa_context_connect(pa_ctx_, nullptr, PA_CONTEXT_NOFLAGS, nullptr) < 0) {
+    std::cerr << "[LightShow] pa_context_connect failed: "
+              << pa_strerror(pa_context_errno(pa_ctx_)) << '\n';
+    pa_threaded_mainloop_unlock(pa_ml_);
+    destroyPulse_();
+    return false;
+  }
+
+  for (;;) {
+    pa_context_state_t st = pa_context_get_state(pa_ctx_);
+    if (st == PA_CONTEXT_READY)
+      break;
+    if (st == PA_CONTEXT_FAILED || st == PA_CONTEXT_TERMINATED) {
+      std::cerr << "[LightShow] context failed during connect\n";
+      pa_threaded_mainloop_unlock(pa_ml_);
+      destroyPulse_();
+      return false;
+    }
+    pa_threaded_mainloop_wait(pa_ml_);
   }
 
   pa_sample_spec ss{};
@@ -141,108 +210,176 @@ void LightShow::captureLoop_() {
   ss.rate = SR;
   ss.channels = CHANS;
 
-  pa_buffer_attr attr;
-  std::memset(&attr, 0xFF, sizeof(attr));
+  pa_buffer_attr attr{};
+  attr.maxlength = static_cast<uint32_t>(-1);
+  attr.tlength = static_cast<uint32_t>(-1);
+  attr.prebuf = static_cast<uint32_t>(-1);
+  attr.minreq = static_cast<uint32_t>(-1);
   attr.fragsize = HOP * CHANS * sizeof(int16_t);
 
-  int err = 0;
-  pa_simple *local =
-      pa_simple_new(nullptr, "Lights-LightShow", PA_STREAM_RECORD,
-                    device.empty() ? nullptr : device.c_str(), "capture", &ss,
-                    nullptr, &attr, &err);
-  if (!local) {
-    std::cerr << "[LightShow] pa_simple_new failed: " << pa_strerror(err)
-              << '\n';
-    running_.store(false);
-    return;
+  pa_stream_ = pa_stream_new(pa_ctx_, "capture", &ss, nullptr);
+  if (!pa_stream_) {
+    std::cerr << "[LightShow] pa_stream_new failed: "
+              << pa_strerror(pa_context_errno(pa_ctx_)) << '\n';
+    pa_threaded_mainloop_unlock(pa_ml_);
+    destroyPulse_();
+    return false;
   }
 
-  {
-    std::lock_guard<std::mutex> lk(pa_mtx_);
-    rec_ = local;
+  pa_stream_set_state_callback(pa_stream_, &LightShow::streamStateCb_, this);
+  pa_stream_set_read_callback(pa_stream_, &LightShow::streamReadCb_, this);
+
+  if (pa_stream_connect_record(
+          pa_stream_, device.empty() ? nullptr : device.c_str(), &attr,
+          static_cast<pa_stream_flags_t>(PA_STREAM_ADJUST_LATENCY |
+                                         PA_STREAM_AUTO_TIMING_UPDATE |
+                                         PA_STREAM_INTERPOLATE_TIMING)) < 0) {
+    std::cerr << "[LightShow] pa_stream_connect_record failed: "
+              << pa_strerror(pa_context_errno(pa_ctx_)) << '\n';
+    pa_threaded_mainloop_unlock(pa_ml_);
+    destroyPulse_();
+    return false;
   }
+
+  for (;;) {
+    pa_stream_state_t st = pa_stream_get_state(pa_stream_);
+    if (st == PA_STREAM_READY)
+      break;
+    if (st == PA_STREAM_FAILED || st == PA_STREAM_TERMINATED) {
+      std::cerr << "[LightShow] stream failed during connect\n";
+      pa_threaded_mainloop_unlock(pa_ml_);
+      destroyPulse_();
+      return false;
+    }
+    pa_threaded_mainloop_wait(pa_ml_);
+  }
+
+  pa_threaded_mainloop_unlock(pa_ml_);
 
   std::cerr << "[LightShow] capture '" << device << "' @" << ss.rate << "Hz\n";
+  return true;
+}
 
-  initFFTW_();
+void LightShow::destroyPulse_() {
+  if (!pa_ml_)
+    return;
 
-  std::vector<float> ringL;
-  std::vector<float> ringR;
-  ringL.reserve(NFFT * 4);
-  ringR.reserve(NFFT * 4);
+  pa_threaded_mainloop_lock(pa_ml_);
 
-  constexpr size_t read_samples = HOP;
-  std::vector<int16_t> readbuf(read_samples * CHANS);
+  if (pa_stream_) {
+    pa_operation *op = pa_stream_cork(pa_stream_, 1, nullptr, nullptr);
+    if (op)
+      pa_operation_unref(op);
 
-  magL_.assign(NFFT / 2 + 1, 0.0f);
-  magR_.assign(NFFT / 2 + 1, 0.0f);
+    pa_stream_set_read_callback(pa_stream_, nullptr, nullptr);
+    pa_stream_set_state_callback(pa_stream_, nullptr, nullptr);
+    pa_stream_disconnect(pa_stream_);
+    pa_stream_unref(pa_stream_);
+    pa_stream_ = nullptr;
+  }
 
-  while (running_.load()) {
-    int er = 0;
-    if (pa_simple_read(local, readbuf.data(), readbuf.size() * sizeof(int16_t),
-                       &er) < 0) {
-      if (!running_.load())
-        break;
-      std::cerr << "[LightShow] read error: " << pa_strerror(er) << '\n';
-      std::this_thread::sleep_for(std::chrono::milliseconds(8));
+  if (pa_ctx_) {
+    pa_context_set_state_callback(pa_ctx_, nullptr, nullptr);
+    pa_context_disconnect(pa_ctx_);
+    pa_context_unref(pa_ctx_);
+    pa_ctx_ = nullptr;
+  }
+
+  pa_threaded_mainloop_unlock(pa_ml_);
+
+  pa_threaded_mainloop_stop(pa_ml_);
+  pa_threaded_mainloop_free(pa_ml_);
+  pa_ml_ = nullptr;
+  pa_api_ = nullptr;
+}
+
+void LightShow::contextStateCb_(pa_context *, void *userdata) {
+  auto *self = static_cast<LightShow *>(userdata);
+  if (self && self->pa_ml_)
+    pa_threaded_mainloop_signal(self->pa_ml_, 0);
+}
+
+void LightShow::streamStateCb_(pa_stream *, void *userdata) {
+  auto *self = static_cast<LightShow *>(userdata);
+  if (self && self->pa_ml_)
+    pa_threaded_mainloop_signal(self->pa_ml_, 0);
+}
+
+void LightShow::streamReadCb_(pa_stream *s, size_t, void *userdata) {
+  auto *self = static_cast<LightShow *>(userdata);
+  if (!self || !self->running_.load())
+    return;
+
+  const void *data = nullptr;
+  size_t nbytes = 0;
+
+  while (pa_stream_readable_size(s) > 0) {
+    if (pa_stream_peek(s, &data, &nbytes) < 0)
+      return;
+
+    if (!data || nbytes == 0) {
+      pa_stream_drop(s);
       continue;
     }
 
-    for (size_t i = 0; i < read_samples; ++i) {
-      ringL.push_back(static_cast<float>(readbuf[2 * i + 0]));
-      ringR.push_back(static_cast<float>(readbuf[2 * i + 1]));
-    }
+    const auto *samples = static_cast<const int16_t *>(data);
+    const size_t sample_count = nbytes / sizeof(int16_t);
+    const size_t frame_count = sample_count / CHANS;
 
-    while (ringL.size() >= NFFT && ringR.size() >= NFFT) {
-      for (size_t i = 0; i < NFFT; ++i)
-        in_[i] = ringL[i] * window_[i];
-      fftwf_execute(plan_);
-      for (size_t k = 0; k <= NFFT / 2; ++k) {
-        const float re = out_[k][0];
-        const float im = out_[k][1];
-        magL_[k] = std::sqrt(re * re + im * im);
-      }
+    self->processAudioBlock_(samples, frame_count);
 
-      for (size_t i = 0; i < NFFT; ++i)
-        in_[i] = ringR[i] * window_[i];
-      fftwf_execute(plan_);
-      for (size_t k = 0; k <= NFFT / 2; ++k) {
-        const float re = out_[k][0];
-        const float im = out_[k][1];
-        magR_[k] = std::sqrt(re * re + im * im);
-      }
+    pa_stream_drop(s);
+  }
+}
 
-      ringL.erase(ringL.begin(), ringL.begin() + HOP);
-      ringR.erase(ringR.begin(), ringR.begin() + HOP);
+void LightShow::processAudioBlock_(const int16_t *samples, size_t frame_count) {
+  if (!samples || frame_count == 0)
+    return;
 
-      SideBands left = analyzeMag_(magL_, true, 0);
-      SideBands right = analyzeMag_(magR_, false, 1);
+  std::lock_guard<std::mutex> lk(audio_mtx_);
 
-      L_bass_.store(left.bass, std::memory_order_relaxed);
-      L_mid_.store(left.mid, std::memory_order_relaxed);
-      L_high_.store(left.high, std::memory_order_relaxed);
-      L_base_.store(left.base, std::memory_order_relaxed);
-
-      R_bass_.store(right.bass, std::memory_order_relaxed);
-      R_mid_.store(right.mid, std::memory_order_relaxed);
-      R_high_.store(right.high, std::memory_order_relaxed);
-      R_base_.store(right.base, std::memory_order_relaxed);
-
-      have_frame_.store(true, std::memory_order_release);
-    }
+  for (size_t i = 0; i < frame_count; ++i) {
+    ringL_.push_back(static_cast<float>(samples[2 * i + 0]));
+    ringR_.push_back(static_cast<float>(samples[2 * i + 1]));
   }
 
-  destroyFFTW_();
-
-  {
-    std::lock_guard<std::mutex> lk(pa_mtx_);
-    if (rec_) {
-      pa_simple_free(rec_);
-      rec_ = nullptr;
+  while (ringL_.size() >= NFFT && ringR_.size() >= NFFT) {
+    for (size_t i = 0; i < NFFT; ++i)
+      in_[i] = ringL_[i] * window_[i];
+    fftwf_execute(plan_);
+    for (size_t k = 0; k <= NFFT / 2; ++k) {
+      const float re = out_[k][0];
+      const float im = out_[k][1];
+      magL_[k] = std::sqrt(re * re + im * im);
     }
-  }
 
-  std::cerr << "[LightShow] capture loop stopped\n";
+    for (size_t i = 0; i < NFFT; ++i)
+      in_[i] = ringR_[i] * window_[i];
+    fftwf_execute(plan_);
+    for (size_t k = 0; k <= NFFT / 2; ++k) {
+      const float re = out_[k][0];
+      const float im = out_[k][1];
+      magR_[k] = std::sqrt(re * re + im * im);
+    }
+
+    ringL_.erase(ringL_.begin(), ringL_.begin() + HOP);
+    ringR_.erase(ringR_.begin(), ringR_.begin() + HOP);
+
+    SideBands left = analyzeMag_(magL_, true, 0);
+    SideBands right = analyzeMag_(magR_, false, 1);
+
+    L_bass_.store(left.bass, std::memory_order_relaxed);
+    L_mid_.store(left.mid, std::memory_order_relaxed);
+    L_high_.store(left.high, std::memory_order_relaxed);
+    L_base_.store(left.base, std::memory_order_relaxed);
+
+    R_bass_.store(right.bass, std::memory_order_relaxed);
+    R_mid_.store(right.mid, std::memory_order_relaxed);
+    R_high_.store(right.high, std::memory_order_relaxed);
+    R_base_.store(right.base, std::memory_order_relaxed);
+
+    have_frame_.store(true, std::memory_order_release);
+  }
 }
 
 LightShow::SideBands LightShow::analyzeMag_(const std::vector<float> &mag,
@@ -283,7 +420,7 @@ LightShow::SideBands LightShow::analyzeMag_(const std::vector<float> &mag,
 }
 
 LightShow::RGB LightShow::computeLed_(size_t led_index, const SideBands &side,
-                                      bool is_left, double time_sec) const {
+                                      bool /*is_left*/, double time_sec) const {
   const float black_t = cfg_.black_agc.load();
   const float white_t = cfg_.white_agc.load();
 

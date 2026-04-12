@@ -17,17 +17,14 @@
 #include <vector>
 
 #include <fftw3.h>
-#include <pulse/error.h>
-#include <pulse/simple.h>
+#include <pulse/pulseaudio.h>
 
 struct LightShowTunables {
-  // Loudness / gates
   std::atomic<float> agc_target{0.60f};
   std::atomic<float> white_agc{0.98f};
   std::atomic<float> black_agc{0.025f};
   std::atomic<float> agc_baseline_keep{0.985f};
 
-  // Output shaping
   std::atomic<float> master_gain{0.65f};
   std::atomic<float> gamma{0.98f};
   std::atomic<float> saturation{1.00f};
@@ -35,16 +32,13 @@ struct LightShowTunables {
   std::atomic<float> log_gain{1.35f};
   std::atomic<float> soft_k{0.55f};
 
-  // Global per-band emphasis
   std::atomic<float> band_gain_bass{1.05f};
   std::atomic<float> band_gain_mid{0.95f};
   std::atomic<float> band_gain_high{1.00f};
 
-  // Drift strength in middle zone only
   std::atomic<float> drift_amount{0.12f};
   std::atomic<float> drift_speed_scale{1.00f};
 
-  // Slight stereo personality
   std::atomic<float> tilt_left_r{1.00f};
   std::atomic<float> tilt_left_g{0.97f};
   std::atomic<float> tilt_left_b{1.04f};
@@ -134,7 +128,14 @@ private:
   void destroyFFTW_();
   void initPersonalities_();
 
-  void captureLoop_();
+  bool initPulse_();
+  void destroyPulse_();
+
+  static void contextStateCb_(pa_context *c, void *userdata);
+  static void streamStateCb_(pa_stream *s, void *userdata);
+  static void streamReadCb_(pa_stream *s, size_t nbytes, void *userdata);
+
+  void processAudioBlock_(const int16_t *samples, size_t frame_count);
   void renderLoop_();
 
   SideBands analyzeMag_(const std::vector<float> &mag, bool is_left,
@@ -151,10 +152,15 @@ private:
   mutable std::mutex cfg_mtx_;
   std::string monitor_;
 
-  std::mutex pa_mtx_;
-  pa_simple *rec_ = nullptr;
+  std::mutex audio_mtx_;
+  std::vector<float> ringL_;
+  std::vector<float> ringR_;
 
-  std::thread capture_;
+  pa_threaded_mainloop *pa_ml_ = nullptr;
+  pa_mainloop_api *pa_api_ = nullptr;
+  pa_context *pa_ctx_ = nullptr;
+  pa_stream *pa_stream_ = nullptr;
+
   std::thread render_;
   std::atomic<bool> running_{false};
 
