@@ -61,6 +61,7 @@ private:
   void stopLightShow();
 
 private:
+  std::atomic<bool> m_shuttingDown{false};
   std::atomic<bool> m_themeSendBusy{false};
 
   void sendThemeToTeensyAsync(int themeId, const std::string &themeName,

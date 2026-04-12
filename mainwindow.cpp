@@ -55,15 +55,9 @@ MainWindow::MainWindow()
 
 void MainWindow::initializeStartupState() {
   m_ampSwitch.setEnabled(false);
-
-  m_btControl.disconnectAllDevices();
-  m_btControl.stopScan();
-  m_btControl.setDiscoverable(false);
-  m_btControl.setPairable(false);
-  m_bluezAgent.stop();
-  m_btControl.powerOff();
-
   m_bluetoothState = 0;
+  Glib::signal_idle().connect_once(
+      [this]() { startBluetoothTransition(false); });
 }
 
 void MainWindow::loadSettings() {
@@ -375,6 +369,14 @@ void MainWindow::startBluetoothTransition(bool enable) {
     m_btWorker.join();
 
   m_btWorker = std::thread([this, enable]() {
+    if (m_shuttingDown) {
+      std::lock_guard<std::mutex> lock(m_btResultMutex);
+      m_btResultEnabled = enable;
+      m_btResultSuccess = false;
+      m_btResultToast.clear();
+      return;
+    }
+
     bool success = false;
     std::string toast;
 
@@ -1228,8 +1230,9 @@ void MainWindow::onBluetoothPowerChanged(bool enabled) {
 }
 
 void MainWindow::updateLightShowState() {
-  std::cout << "Start Lightshow" << std::endl;
   const bool shouldRun = (m_options.on && m_bluetoothState);
+  std::cout << "Start Lightshow: " << (shouldRun ? "True" : "False")
+            << std::endl;
 
   if (shouldRun) {
     if (!m_lightShowRunning) {
@@ -1334,6 +1337,8 @@ void MainWindow::sendThemeToTeensyAsync(int themeId,
 MainWindow::~MainWindow() {
   LOG_INFO() << "MainWindow dtor begin";
 
+  m_shuttingDown = true;
+
   stopLightShow();
 
   if (!m_ampSwitch.setEnabled(false)) {
@@ -1341,21 +1346,13 @@ MainWindow::~MainWindow() {
   }
 
   stopBluetoothPolling();
-  m_bluezAgent.stop();
 
-  if (m_btWorker.joinable())
-    m_btWorker.join();
-
-  m_btControl.stopScan();
-  m_btControl.setDiscoverable(false);
-  m_btControl.setPairable(false);
-  m_btControl.disconnectAllDevices();
-  m_btControl.powerOff();
-
+  if (m_btWorker.joinable()) {
+    LOG_WARN() << "Bluetooth worker still running during shutdown; detaching";
+    m_btWorker.detach();
+  }
   if (m_toastHideConn.connected())
     m_toastHideConn.disconnect();
-
-  m_powerThread.stop();
 
   if (m_idleClockConn.connected())
     m_idleClockConn.disconnect();
@@ -1372,12 +1369,15 @@ MainWindow::~MainWindow() {
   if (m_scheduledEventConn.connected())
     m_scheduledEventConn.disconnect();
 
+  m_powerThread.stop();
   m_doorbellThread.stop();
 
   if (m_mobileLightsPoller)
     m_mobileLightsPoller->stop();
+  std::cout << "WTF" << std::endl;
 
-  ClockThread::instance().stop();
+  // ClockThread::instance().stop();
+  std::cout << "WTF" << std::endl;
 
   destroyAllTemporaryPages();
 
