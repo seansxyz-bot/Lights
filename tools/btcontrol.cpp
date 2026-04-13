@@ -287,26 +287,26 @@ bool BTControl::markConnectedNow(const std::string &macAddress) const {
 bool BTControl::powerOn() {
   bool powered = false;
 
-  LOG_INFO() << "BT powerOn: checking current state";
-  if (m_bluez.isPoweredOn(&powered) && powered) {
-    setStatus("Bluetooth on");
-    m_signalPowerChanged.emit(true);
-    return true;
-  }
-
-  LOG_INFO() << "BT powerOn: setting Powered=true";
-  if (!m_bluez.setPowered(true)) {
-    setError(m_bluez.lastError().empty() ? "Failed to power on bluetooth"
+  if (!m_bluez.isPoweredOn(&powered)) {
+    setError(m_bluez.lastError().empty() ? "Failed to query bluetooth power"
                                          : m_bluez.lastError());
     return false;
   }
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  if (!powered) {
+    LOG_INFO() << "BT powerOn: setting Powered=true";
+    if (!m_bluez.setPowered(true)) {
+      setError(m_bluez.lastError().empty() ? "Failed to power on bluetooth"
+                                           : m_bluez.lastError());
+      return false;
+    }
 
-  LOG_INFO() << "BT powerOn: rechecking current state";
-  if (!m_bluez.isPoweredOn(&powered) || !powered) {
-    setError("Bluetooth did not report powered on");
-    return false;
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    if (!m_bluez.isPoweredOn(&powered) || !powered) {
+      setError("Bluetooth did not report powered on");
+      return false;
+    }
   }
 
   if (!setSystemAlias("Light Controller")) {
@@ -374,11 +374,15 @@ bool BTControl::isPoweredOn() const {
 }
 
 bool BTControl::enableAgent(const std::string &capability) {
+  if (m_agent.isActive())
+    return true;
+
   if (!m_agent.start(capability)) {
     setError(m_agent.lastError().empty() ? "Failed to start BT agent"
                                          : m_agent.lastError());
     return false;
   }
+
   return true;
 }
 
@@ -396,7 +400,6 @@ bool BTControl::setPairable(bool enabled) {
                                          : m_bluez.lastError());
     return false;
   }
-  clearerr(stdin);
   return true;
 }
 
@@ -459,6 +462,9 @@ bool BTControl::scanAvailableDevices() {
 
   auto devices = m_bluez.getDevices();
   for (const auto &d : devices) {
+    if (!d.paired)
+      continue;
+
     BTDevice full = fromBluezDevice(d);
     full.discovered = true;
     upsertDevice(full);

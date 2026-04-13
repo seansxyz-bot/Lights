@@ -328,7 +328,7 @@ std::vector<BluezDeviceInfo> BluezClient::getDevices() const {
   gchar *objectPath = nullptr;
   GVariantIter *ifaces = nullptr;
 
-  while (g_variant_iter_next(objects, "{oaa{sa{sv}}}", &objectPath, &ifaces)) {
+  while (g_variant_iter_next(objects, "{oa{sa{sv}}}", &objectPath, &ifaces)) {
     gchar *ifaceName = nullptr;
     GVariantIter *props = nullptr;
 

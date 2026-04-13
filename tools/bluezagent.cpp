@@ -56,10 +56,19 @@ BluezAgent::BluezAgent() = default;
 BluezAgent::~BluezAgent() { stop(); }
 
 bool BluezAgent::start(const std::string &capability) {
-  stop();
   clearError();
 
-  m_capability = capability.empty() ? "NoInputNoOutput" : capability;
+  const std::string wanted =
+      capability.empty() ? "NoInputNoOutput" : capability;
+
+  if (isActive()) {
+    if (m_capability == wanted)
+      return true;
+
+    stop();
+  }
+
+  m_capability = wanted;
 
   GError *error = nullptr;
   m_connection = g_bus_get_sync(G_BUS_TYPE_SYSTEM, nullptr, &error);
@@ -160,6 +169,8 @@ bool BluezAgent::registerWithBluez() {
     return false;
   }
   g_variant_unref(result);
+  LOG_INFO() << "BluezAgent RegisterAgent ok path=" << kObjectPath
+             << " capability=" << m_capability;
 
   error = nullptr;
   result = g_dbus_connection_call_sync(
@@ -176,6 +187,7 @@ bool BluezAgent::registerWithBluez() {
     return false;
   }
   g_variant_unref(result);
+  LOG_INFO() << "BluezAgent RequestDefaultAgent ok path=" << kObjectPath;
 
   return true;
 }
@@ -224,8 +236,10 @@ void BluezAgent::handleMethodCall(
   }
 
   const std::string method = method_name ? method_name : "";
+  LOG_WARN() << "BluezAgent::handleMethodCall method=" << method;
 
   if (method == "Release") {
+    LOG_WARN() << "BluezAgent::Release";
     g_dbus_method_invocation_return_value(invocation, nullptr);
     return;
   }
@@ -241,6 +255,9 @@ void BluezAgent::handleMethodCall(
     guint32 passkey = 0;
     g_variant_get(parameters, "(&ou)", &device, &passkey);
 
+    LOG_WARN() << "BluezAgent::RequestConfirmation device="
+               << (device ? device : "") << " passkey=" << passkey;
+
     g_dbus_method_invocation_return_value(invocation, nullptr);
     return;
   }
@@ -248,6 +265,9 @@ void BluezAgent::handleMethodCall(
   if (method == "RequestAuthorization") {
     const gchar *device = nullptr;
     g_variant_get(parameters, "(&o)", &device);
+
+    LOG_WARN() << "BluezAgent::RequestAuthorization device="
+               << (device ? device : "");
 
     g_dbus_method_invocation_return_value(invocation, nullptr);
     return;
@@ -258,6 +278,9 @@ void BluezAgent::handleMethodCall(
     const gchar *uuid = nullptr;
     g_variant_get(parameters, "(&o&s)", &device, &uuid);
 
+    LOG_WARN() << "BluezAgent::AuthorizeService device="
+               << (device ? device : "") << " uuid=" << (uuid ? uuid : "");
+
     g_dbus_method_invocation_return_value(invocation, nullptr);
     return;
   }
@@ -266,6 +289,9 @@ void BluezAgent::handleMethodCall(
     const gchar *device = nullptr;
     const gchar *pincode = nullptr;
     g_variant_get(parameters, "(&o&s)", &device, &pincode);
+
+    LOG_WARN() << "BluezAgent::DisplayPinCode device=" << (device ? device : "")
+               << " pincode=" << (pincode ? pincode : "");
 
     g_dbus_method_invocation_return_value(invocation, nullptr);
     return;
@@ -277,24 +303,38 @@ void BluezAgent::handleMethodCall(
     guint16 entered = 0;
     g_variant_get(parameters, "(&ouq)", &device, &passkey, &entered);
 
+    LOG_WARN() << "BluezAgent::DisplayPasskey device=" << (device ? device : "")
+               << " passkey=" << passkey << " entered=" << entered;
+
     g_dbus_method_invocation_return_value(invocation, nullptr);
     return;
   }
 
   if (method == "RequestPinCode") {
-    LOG_WARN() << "BluezAgent::RequestPinCode rejected for NoInputNoOutput";
+    const gchar *device = nullptr;
+    g_variant_get(parameters, "(&o)", &device);
+
+    LOG_WARN() << "BluezAgent::RequestPinCode rejected device="
+               << (device ? device : "");
+
     g_dbus_method_invocation_return_dbus_error(
         invocation, "org.bluez.Error.Rejected", "No input available");
     return;
   }
 
   if (method == "RequestPasskey") {
-    LOG_WARN() << "BluezAgent::RequestPasskey rejected for NoInputNoOutput";
+    const gchar *device = nullptr;
+    g_variant_get(parameters, "(&o)", &device);
+
+    LOG_WARN() << "BluezAgent::RequestPasskey rejected device="
+               << (device ? device : "");
+
     g_dbus_method_invocation_return_dbus_error(
         invocation, "org.bluez.Error.Rejected", "No input available");
     return;
   }
 
+  LOG_WARN() << "BluezAgent::UnknownMethod method=" << method;
   g_dbus_method_invocation_return_dbus_error(
       invocation, "org.freedesktop.DBus.Error.UnknownMethod",
       "Unknown agent method");
