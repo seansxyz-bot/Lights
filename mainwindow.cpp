@@ -279,6 +279,7 @@ void MainWindow::onMobileOptionsChanged(const Options &options) {
   std::cout << "Web Options Changed: " << std::endl;
   writeToServer = false;
   writeOptions(SETTINGS_PATH, m_options);
+  m_teensyClient.applyThemePattern(m_options.theme, m_options.theme);
   writeToServer = true;
 }
 
@@ -972,10 +973,30 @@ void MainWindow::doRestart() {
 void MainWindow::onScheduleStarted(const Schedule &schedules) {
   // turn on theme pattern combo
   std::cout << "StartTheme: " << schedules.name << std::endl;
+  m_options.theme = schedules.themeID;
+  m_options.ptrn = m_options.ptrn == 0 ? 1 : m_options.ptrn;
+  writeOptions(SETTINGS_PATH, m_options);
+  m_teensyClient.applyThemePattern(m_options.theme, m_options.ptrn);
 }
 
 void MainWindow::onScheduleEnded(const Schedule &schedules) {
   // turn off theme and pattern
+  m_options.theme = 0;
+  m_options.ptrn = 0;
+  writeOptions(SETTINGS_PATH, m_options);
+
+  std::thread([this]() {
+    for (int i = 0; i < NUM_OF_LEDS; i++) {
+      uint32_t mask = (1u << i);
+
+      m_teensyClient.applyMaskedRGB(mask,
+                                    static_cast<uint8_t>(m_ledInfo[i].redVal),
+                                    static_cast<uint8_t>(m_ledInfo[i].grnVal),
+                                    static_cast<uint8_t>(m_ledInfo[i].bluVal));
+
+      std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    }
+  }).detach();
 }
 
 std::string normalizeTeamFileName(const std::string &name) {
@@ -1095,6 +1116,7 @@ void MainWindow::updateOptions(const Options &options) {
   m_options = options;
   writeOptions(std::string(SETTINGS_PATH), m_options);
   LOG_INFO() << "Options updated";
+  m_teensyClient.applyThemePattern(m_options.theme, m_options.theme);
 }
 
 void MainWindow::updateScheduleEntry(int index, const Schedule &entry) {
@@ -1105,7 +1127,6 @@ void MainWindow::updateScheduleEntry(int index, const Schedule &entry) {
 
   m_schedule[index] = entry;
   writeSchedule(std::string(SETTINGS_PATH), m_schedule);
-
   LOG_INFO() << "Schedule entry updated at index " << index;
 }
 

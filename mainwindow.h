@@ -64,6 +64,9 @@ private:
   std::atomic<bool> m_shuttingDown{false};
   std::atomic<bool> m_themeSendBusy{false};
   std::mutex m_lightShowMutex;
+  bool isSportsSchedule(const Schedule &s);
+  void applyCurrentScheduleState();
+  void restoreManualLedsAsync();
 
   void sendThemeToTeensyAsync(int themeId, const std::string &themeName,
                               const std::vector<RGB_Color> &colors);

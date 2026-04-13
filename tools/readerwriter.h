@@ -12,8 +12,6 @@
 #define SETTINGS_PATH "/home/lights/.lightcontroller"
 #endif
 
-#define NUM_OF_LEDS 19
-
 #include "fstream"
 #include "iostream"
 #include "parserhelper.h"

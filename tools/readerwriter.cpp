@@ -68,8 +68,8 @@ Options readOptions(std::string path) {
   if (!file.is_open()) {
     opts.sensor = 1;
     opts.on = 1;
-    opts.theme = 10;
-    opts.ptrn = 1;
+    opts.theme = 0;
+    opts.ptrn = 0;
     writeOptions(path, opts);
     return readOptions(path);
   }
