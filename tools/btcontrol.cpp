@@ -446,9 +446,25 @@ bool BTControl::scanPairedDevices() {
     if (!d.paired)
       continue;
 
+    auto old = getDeviceByMac(d.macAddress);
+
     BTDevice full = fromBluezDevice(d);
     full.discovered = true;
     upsertDevice(full);
+
+    const std::string displayName =
+        full.name.empty() ? full.macAddress : full.name;
+
+    if (!old.has_value()) {
+      if (full.connected) {
+        setStatus("Connected: " + displayName);
+      }
+      continue;
+    }
+
+    if (!old->connected && full.connected) {
+      setStatus("Connected: " + displayName);
+    }
   }
 
   return true;
@@ -699,8 +715,9 @@ bool BTControl::trustDevice(const std::string &macAddress) {
     setError("Trusted device, but failed to refresh device info");
     return false;
   }
-
-  setStatus("Trusted: " + macAddress);
+  auto device = getDeviceByMac(macAddress);
+  setStatus("Connected: " +
+            ((device && !device->name.empty()) ? device->name : macAddress));
   return true;
 }
 

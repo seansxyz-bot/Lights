@@ -410,10 +410,6 @@ void MainWindow::startBluetoothTransition(bool enable) {
         }
         m_bluetoothState = 1;
 
-        if (!m_bluezAgent.start("NoInputNoOutput")) {
-          LOG_WARN() << "BluezAgent start failed: " << m_bluezAgent.lastError();
-        }
-
         if (!m_btControl.setPairable(true))
           LOG_WARN() << "Failed to set bluetooth pairable on";
 
@@ -795,9 +791,16 @@ bool MainWindow::onBluetoothPollTick() {
   if (!m_bluetoothState)
     return false;
 
+  const std::string oldStatus = m_btControl.lastStatus();
+
   m_btControl.scanAvailableDevices();
   m_btControl.scanPairedDevices();
   m_btControl.trustAllPairedDevices();
+
+  const std::string newStatus = m_btControl.lastStatus();
+  if (!newStatus.empty() && newStatus != oldStatus) {
+    showShortToast(newStatus);
+  }
 
   auto best = m_btControl.getBestDevice();
   if (best && best->connected) {
@@ -805,8 +808,10 @@ bool MainWindow::onBluetoothPollTick() {
   }
 
   if (m_btControl.autoReconnectBestDevice()) {
-    if (!m_btControl.lastStatus().empty())
-      showShortToast(m_btControl.lastStatus());
+    const std::string reconnectStatus = m_btControl.lastStatus();
+    if (!reconnectStatus.empty() && reconnectStatus != newStatus) {
+      showShortToast(reconnectStatus);
+    }
   }
 
   return true;
@@ -1378,6 +1383,7 @@ MainWindow::~MainWindow() {
     LOG_WARN() << "Bluetooth worker still running during shutdown; detaching";
     m_btWorker.join();
   }
+
   if (!setBluetoothRfkillBlocked(true)) {
     LOG_WARN() << "Failed to rfkill-block bluetooth in dtor";
   } else {
