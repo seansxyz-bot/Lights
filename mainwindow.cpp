@@ -87,6 +87,12 @@ void MainWindow::loadSettings() {
   m_schedule = readSchedule(std::string(SETTINGS_PATH));
   m_themes = readThemeColors(std::string(SETTINGS_PATH));
 
+  std::time_t now = std::time(nullptr);
+  std::tm local_tm{};
+  localtime_r(&now, &local_tm);
+  const int year = local_tm.tm_year + 1900;
+
+  updateMoveableHolidayDates(year);
   LOG_INFO() << "Settings loaded. leds=" << m_ledInfo.size()
              << " schedule_entries=" << m_schedule.size();
 
@@ -128,6 +134,11 @@ void MainWindow::startConnections() {
         LOG_INFO() << "Top of the minute: " << minute;
         if (m_options.sensor)
           m_powerThread.setEnabled(m_options, gpio.read(PIN_SENSOR, true));
+      });
+  m_newYearConn =
+      ClockThread::instance().signal_new_year().connect([this](int year) {
+        LOG_INFO() << "New year detected: " << year;
+        onNewYear(year);
       });
   ClockThread::instance().signal_schedule_started().connect(
       sigc::mem_fun(*this, &MainWindow::onScheduleStarted));
@@ -279,7 +290,7 @@ void MainWindow::onMobileOptionsChanged(const Options &options) {
   std::cout << "Web Options Changed: " << std::endl;
   writeToServer = false;
   writeOptions(SETTINGS_PATH, m_options);
-  m_teensyClient.applyThemePattern(m_options.theme, m_options.theme);
+  m_teensyClient.applyThemePattern(m_options.theme, m_options.ptrn);
   writeToServer = true;
 }
 
@@ -970,21 +981,11 @@ void MainWindow::doRestart() {
   system("reboot");
 }
 
-void MainWindow::onScheduleStarted(const Schedule &schedules) {
-  // turn on theme pattern combo
-  std::cout << "StartTheme: " << schedules.name << std::endl;
-  m_options.theme = schedules.themeID;
-  m_options.ptrn = m_options.ptrn == 0 ? 1 : m_options.ptrn;
-  writeOptions(SETTINGS_PATH, m_options);
-  m_teensyClient.applyThemePattern(m_options.theme, m_options.ptrn);
+bool MainWindow::isSportsSchedule(const Schedule &s) {
+  return s.name.rfind("TEAM_", 0) == 0;
 }
 
-void MainWindow::onScheduleEnded(const Schedule &schedules) {
-  // turn off theme and pattern
-  m_options.theme = 0;
-  m_options.ptrn = 0;
-  writeOptions(SETTINGS_PATH, m_options);
-
+void MainWindow::restoreManualLedsAsync() {
   std::thread([this]() {
     for (int i = 0; i < NUM_OF_LEDS; i++) {
       uint32_t mask = (1u << i);
@@ -994,9 +995,65 @@ void MainWindow::onScheduleEnded(const Schedule &schedules) {
                                     static_cast<uint8_t>(m_ledInfo[i].grnVal),
                                     static_cast<uint8_t>(m_ledInfo[i].bluVal));
 
-      std::this_thread::sleep_for(std::chrono::milliseconds(250));
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
   }).detach();
+}
+
+void MainWindow::applyCurrentScheduleState() {
+  auto active = ClockThread::instance().activeSchedulesSnapshot();
+
+  const Schedule *winner = nullptr;
+
+  // First pass: sports schedules win
+  for (const auto &base : m_schedule) {
+    for (const auto &a : active) {
+      if (a.name != base.name)
+        continue;
+
+      if (isSportsSchedule(a) && a.themeID > 0) {
+        winner = &a;
+      }
+    }
+  }
+
+  // Second pass: normal scheduled theme if no sports active
+  if (!winner) {
+    for (const auto &base : m_schedule) {
+      for (const auto &a : active) {
+        if (a.name != base.name)
+          continue;
+
+        if (!isSportsSchedule(a) && a.themeID > 0) {
+          winner = &a;
+        }
+      }
+    }
+  }
+
+  if (winner) {
+    m_options.theme = winner->themeID;
+    m_options.ptrn = (m_options.ptrn == 0) ? 1 : m_options.ptrn;
+    writeOptions(SETTINGS_PATH, m_options);
+    m_teensyClient.applyThemePattern(m_options.theme, m_options.ptrn);
+    return;
+  }
+
+  m_options.theme = 0;
+  m_options.ptrn = 0;
+  writeOptions(SETTINGS_PATH, m_options);
+  m_teensyClient.applyThemePattern(m_options.theme, m_options.ptrn);
+  restoreManualLedsAsync();
+}
+
+void MainWindow::onScheduleStarted(const Schedule &schedule) {
+  std::cout << "StartTheme: " << schedule.name << std::endl;
+  applyCurrentScheduleState();
+}
+
+void MainWindow::onScheduleEnded(const Schedule &schedule) {
+  std::cout << "EndTheme: " << schedule.name << std::endl;
+  applyCurrentScheduleState();
 }
 
 std::string normalizeTeamFileName(const std::string &name) {
@@ -1116,7 +1173,7 @@ void MainWindow::updateOptions(const Options &options) {
   m_options = options;
   writeOptions(std::string(SETTINGS_PATH), m_options);
   LOG_INFO() << "Options updated";
-  m_teensyClient.applyThemePattern(m_options.theme, m_options.theme);
+  m_teensyClient.applyThemePattern(m_options.theme, m_options.ptrn);
 }
 
 void MainWindow::updateScheduleEntry(int index, const Schedule &entry) {
@@ -1386,6 +1443,193 @@ void MainWindow::sendThemeToTeensyAsync(int themeId,
   }).detach();
 }
 
+void MainWindow::onNewYear(int year) {
+  const bool changed = updateMoveableHolidayDates(year);
+  LOG_INFO() << "Handling yearly holiday update for " << year;
+  if (changed) {
+    showShortToast("Holiday dates updated for " + std::to_string(year));
+    applyCurrentScheduleState();
+  }
+}
+
+bool MainWindow::isLeapYear(int year) {
+  return (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+}
+
+int MainWindow::daysInMonth(int year, int month) {
+  static const int kDays[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  if (month == 2)
+    return isLeapYear(year) ? 29 : 28;
+  return kDays[month - 1];
+}
+
+// returns 0=Sunday, 1=Monday, ... 6=Saturday
+int MainWindow::weekdaySunday0(int year, int month, int day) {
+  std::tm tmv{};
+  tmv.tm_year = year - 1900;
+  tmv.tm_mon = month - 1;
+  tmv.tm_mday = day;
+  tmv.tm_hour = 12; // avoid weird DST edge nonsense
+  tmv.tm_isdst = -1;
+  std::mktime(&tmv);
+  return tmv.tm_wday;
+}
+
+std::string MainWindow::mmdd(int month, int day) {
+  std::ostringstream ss;
+  ss << std::setfill('0') << std::setw(2) << month << "/" << std::setfill('0')
+     << std::setw(2) << day;
+  return ss.str();
+}
+
+std::pair<int, int> MainWindow::easterSunday(int year) {
+  const int a = year % 19;
+  const int b = year / 100;
+  const int c = year % 100;
+  const int d = b / 4;
+  const int e = b % 4;
+  const int f = (b + 8) / 25;
+  const int g = (b - f + 1) / 3;
+  const int h = (19 * a + b - d - g + 15) % 30;
+  const int i = c / 4;
+  const int k = c % 4;
+  const int l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const int m = (a + 11 * h + 22 * l) / 451;
+  const int month = (h + l - 7 * m + 114) / 31;
+  const int day = ((h + l - 7 * m + 114) % 31) + 1;
+  return {month, day};
+}
+
+std::pair<int, int> MainWindow::lastMondayOfMay(int year) {
+  int day = 31;
+  while (weekdaySunday0(year, 5, day) != 1)
+    --day;
+  return {5, day};
+}
+
+std::pair<int, int> MainWindow::firstMondayOfSeptember(int year) {
+  int day = 1;
+  while (weekdaySunday0(year, 9, day) != 1)
+    ++day;
+  return {9, day};
+}
+
+std::pair<int, int> MainWindow::fourthThursdayOfNovember(int year) {
+  int count = 0;
+  for (int day = 1; day <= 30; ++day) {
+    if (weekdaySunday0(year, 11, day) == 4) {
+      ++count;
+      if (count == 4)
+        return {11, day};
+    }
+  }
+  return {11, 22}; // fallback, should never happen
+}
+
+bool MainWindow::updateMoveableHolidayDates(int year) {
+  bool changed = false;
+
+  const auto [eMonth, eDay] = easterSunday(year);
+  const auto [memMonth, memDay] = lastMondayOfMay(year);
+  const auto [labMonth, labDay] = firstMondayOfSeptember(year);
+  const auto [thanksMonth, thanksDay] = fourthThursdayOfNovember(year);
+
+  // Easter weekend = Good Friday through Easter Sunday
+  int goodFridayMonth = eMonth;
+  int goodFridayDay = eDay - 2;
+
+  if (goodFridayDay <= 0) {
+    goodFridayMonth -= 1;
+    if (goodFridayMonth <= 0)
+      goodFridayMonth = 12; // should never happen for Easter, but safe
+    goodFridayDay += daysInMonth(year, goodFridayMonth);
+  }
+
+  const std::string easterStartDate = mmdd(goodFridayMonth, goodFridayDay);
+  const std::string easterEndDate = mmdd(eMonth, eDay);
+
+  const std::string memorialDate = mmdd(memMonth, memDay);
+  const std::string laborDate = mmdd(labMonth, labDay);
+  const std::string thanksgivingEndDate = mmdd(thanksMonth, thanksDay);
+
+  // Christmas starts the day after Thanksgiving
+  int christmasStartMonth = thanksMonth;
+  int christmasStartDay = thanksDay + 1;
+
+  if (christmasStartDay > daysInMonth(year, christmasStartMonth)) {
+    christmasStartDay = 1;
+    christmasStartMonth += 1;
+    if (christmasStartMonth > 12)
+      christmasStartMonth = 1;
+  }
+
+  const std::string christmasStartDate =
+      mmdd(christmasStartMonth, christmasStartDay);
+
+  for (auto &s : m_schedule) {
+    if (s.name == "Easter") {
+      if (s.sDate != easterStartDate || s.sTime != "00:00" ||
+          s.eDate != easterEndDate || s.eTime != "23:59") {
+        s.sDate = easterStartDate;
+        s.sTime = "00:00";
+        s.eDate = easterEndDate;
+        s.eTime = "23:59";
+        changed = true;
+      }
+
+    } else if (s.name == "Memorial Day") {
+      if (s.sDate != memorialDate || s.sTime != "00:00" ||
+          s.eDate != memorialDate || s.eTime != "23:59") {
+        s.sDate = memorialDate;
+        s.sTime = "00:00";
+        s.eDate = memorialDate;
+        s.eTime = "23:59";
+        changed = true;
+      }
+
+    } else if (s.name == "Labor Day") {
+      if (s.sDate != laborDate || s.sTime != "00:00" || s.eDate != laborDate ||
+          s.eTime != "23:59") {
+        s.sDate = laborDate;
+        s.sTime = "00:00";
+        s.eDate = laborDate;
+        s.eTime = "23:59";
+        changed = true;
+      }
+
+    } else if (s.name == "Thanksgiving") {
+      if (s.sDate != "11/01" || s.sTime != "00:00" ||
+          s.eDate != thanksgivingEndDate || s.eTime != "23:59") {
+        s.sDate = "11/01";
+        s.sTime = "00:00";
+        s.eDate = thanksgivingEndDate;
+        s.eTime = "23:59";
+        changed = true;
+      }
+
+    } else if (s.name == "Christmas") {
+      if (s.sDate != christmasStartDate || s.sTime != "00:00" ||
+          s.eDate != "12/31" || s.eTime != "23:59") {
+        s.sDate = christmasStartDate;
+        s.sTime = "00:00";
+        s.eDate = "12/31";
+        s.eTime = "23:59";
+        changed = true;
+      }
+    }
+  }
+
+  if (changed) {
+    writeSchedule(std::string(SETTINGS_PATH), m_schedule);
+    ClockThread::instance().setSchedules(m_schedule);
+    LOG_INFO() << "Updated moveable holiday dates for year " << year;
+  } else {
+    LOG_INFO() << "No moveable holiday date changes needed for year " << year;
+  }
+
+  return changed;
+}
+
 MainWindow::~MainWindow() {
   LOG_INFO() << "MainWindow dtor begin";
 
@@ -1401,7 +1645,7 @@ MainWindow::~MainWindow() {
   stopBluetoothPolling();
 
   if (m_btWorker.joinable()) {
-    LOG_WARN() << "Bluetooth worker still running during shutdown; detaching";
+    LOG_WARN() << "Bluetooth worker still running during shutdown; Joining";
     m_btWorker.join();
   }
 
@@ -1425,6 +1669,12 @@ MainWindow::~MainWindow() {
 
   if (m_newHourConn.connected())
     m_newHourConn.disconnect();
+
+  if (m_newYearConn.connected())
+    m_newYearConn.disconnect();
+
+  if (m_newMinuteConn.connected())
+    m_newMinuteConn.disconnect();
 
   if (m_scheduledEventConn.connected())
     m_scheduledEventConn.disconnect();

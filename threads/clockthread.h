@@ -33,6 +33,7 @@ public:
   sigc::signal<void, int> &signal_new_minute();
   sigc::signal<void, Schedule> &signal_schedule_started();
   sigc::signal<void, Schedule> &signal_schedule_ended();
+  sigc::signal<void, int> &signal_new_year();
 
 private:
   ClockThread();
@@ -52,6 +53,7 @@ private:
       Tick,
       NewHour,
       NewMinute,
+      NewYear,
       ScheduleStarted,
       ScheduleEnded
     };
@@ -59,6 +61,7 @@ private:
     Type type;
     int hour = -1;
     int minute = -1;
+    int year = -1;
     Schedule schedule;
   };
 
@@ -90,6 +93,7 @@ private:
 
   int m_lastHour{-1};
   int m_lastMinute{-1};
+  int m_lastYear{-1};
 
   std::vector<RuntimeSchedule> m_schedules;
   std::vector<PendingEmit> m_pendingEmits;
@@ -101,4 +105,5 @@ private:
   sigc::signal<void, int> m_signalNewMinute;
   sigc::signal<void, Schedule> m_signalScheduleStarted;
   sigc::signal<void, Schedule> m_signalScheduleEnded;
+  sigc::signal<void, int> m_signalNewYear;
 };

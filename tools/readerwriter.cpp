@@ -109,81 +109,90 @@ int writeOptions(std::string path, Options data) {
   return success;
 }
 
-std::vector<Schedule> readSchedule(std::string path1) {
-  std::string path = path1 + std::string("/schedule");
-  // Attempt to open the file for reading
+std::vector<Schedule> readSchedule(const std::string path1) {
   std::vector<Schedule> data;
-  std::ifstream file(path);
-  if (!file.is_open()) {
-    std::cerr << "Failed to open the file. creating file now..." << std::endl;
-    std::vector<std::string> themes = {
-        "New Year's",        "Valentine's Day", "Dad's Birthday",
-        "St. Patrick's Day", "Sean's Birthday", "Easter",
-        "Memorial Day",      "Fourth of July",  "Mom & Dad's Anniversary",
-        "Mom's Birthday",    "Labor Day",       "Halloween",
-        "Thanksgiving",      "Christmas",       "Cops",
-        "Seahawks",          "Kraken",          "Mariners"};
+  const std::string dbPath = path1 + "/lights.db";
 
-    for (int i = 0; i < themes.size(); i++) {
-      std::cout << i << std::endl;
-      Schedule d;
-      d.name = themes[i];
-      d.themeID = i + 1;
-      d.enabled = 0;
-      d.sDate = "01/01";
-      d.sTime = "00:00";
-      d.eDate = "01/01";
-      d.eTime = "00:00";
-      data.push_back(d);
+  sqlite3 *db = nullptr;
+  if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
+    std::cerr << "Failed to open DB: " << dbPath << std::endl;
+    if (db)
+      sqlite3_close(db);
+    return data;
+  }
+
+  const char *sql = "SELECT theme_id,      name,      start_date,      "
+                    "start_time,      end_date,      end_time,      enabled"
+                    " FROM schedules ORDER BY theme_id;";
+
+  sqlite3_stmt *stmt = nullptr;
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+      Schedule s;
+      s.themeID = sqlite3_column_int(stmt, 0);
+      s.name = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
+      s.sDate = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
+      s.sTime = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3));
+      s.eDate = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 4));
+      s.eTime = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 5));
+      s.enabled = sqlite3_column_int(stmt, 6);
+      data.push_back(s);
     }
-    writeSchedule(path1, data);
-    data.clear();
-    return readSchedule(path1);
-  }
-  // Read the file line by line
-  while (!file.eof()) {
-    Schedule d;
-    file >> d.name >> d.themeID >> d.enabled >> d.sDate >> d.sTime >> d.eDate >>
-        d.eTime;
-    std::replace(d.name.begin(), d.name.end(), '_', ' ');
-    data.push_back(d);
   }
 
-  data.pop_back();
-  if (writeToServer) {
-    // http.sendSchedulesAsync("https://lights.seansxyz.com/lights_apis/sync.php",
-    //                         data, DEVICE);
-    http.sendSchedulesAsync("http://192.168.1.100/lights_apis/sync.php", data,
-                            DEVICE);
-  }
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
   return data;
 }
 
-int writeSchedule(std::string path, std::vector<Schedule> data) {
-  path += std::string("/schedule");
-  std::cout << "Writing " << path << std::endl;
-  std::ofstream file(path);
-  int success = 0;
-  if (file.is_open()) {
-    const int len = data.size();
-    for (int i = 0; i < len; i++) {
-      Schedule d = data[i];
-      std::replace(d.name.begin(), d.name.end(), ' ', '_');
-      file << d.name << "\t" << d.themeID << "\t" << d.enabled << "\t"
-           << d.sDate << "\t" << d.sTime << "\t" << d.eDate << "\t" << d.eTime
-           << std::endl;
-    }
-    success = 1;
+int writeSchedule(const std::string path, const std::vector<Schedule> data) {
+  const std::string dbPath = path + "/lights.db";
+  std::cout << dbPath << std::endl;
+  sqlite3 *db = nullptr;
+  if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
+    std::cerr << "Failed to open DB: " << dbPath << std::endl;
+    if (db)
+      sqlite3_close(db);
+    return 0;
   }
 
-  if (writeToServer) {
-    // http.sendSchedulesAsync("https://lights.seansxyz.com/lights_apis/sync.php",
-    //                         data, DEVICE);
-    http.sendSchedulesAsync("http://192.168.1.100/lights_apis/sync.php", data,
-                            DEVICE);
+  sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
+  sqlite3_exec(db, "DELETE FROM schedules;", nullptr, nullptr, nullptr);
+
+  const char *sql =
+      "INSERT INTO schedules "
+      "(theme_id, name, start_date, start_time, end_date, end_time, enabled) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?);";
+
+  sqlite3_stmt *stmt = nullptr;
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    sqlite3_close(db);
+    return 0;
   }
-  file.close();
-  return success;
+
+  for (const auto &s : data) {
+    sqlite3_reset(stmt);
+    sqlite3_bind_int(stmt, 1, s.themeID);
+    sqlite3_bind_text(stmt, 2, s.name.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, s.sDate.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 4, s.sTime.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 5, s.eDate.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 6, s.eTime.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 7, s.enabled);
+
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+      sqlite3_finalize(stmt);
+      sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+      sqlite3_close(db);
+      return 0;
+    }
+    sqlite3_clear_bindings(stmt);
+  }
+
+  sqlite3_finalize(stmt);
+  sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr);
+  sqlite3_close(db);
+  return 1;
 }
 
 GameInfo readNextGame(std::string path, std::string fileName) {

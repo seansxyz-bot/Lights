@@ -23,6 +23,7 @@ ClockThread::ClockThread() {
   m_timeText = formatTime(local_tm);
   m_lastHour = local_tm.tm_hour;
   m_lastMinute = local_tm.tm_min;
+  m_lastYear = local_tm.tm_year + 1900;
 }
 
 ClockThread::~ClockThread() { stop(); }
@@ -121,6 +122,10 @@ sigc::signal<void, Schedule> &ClockThread::signal_schedule_started() {
 
 sigc::signal<void, Schedule> &ClockThread::signal_schedule_ended() {
   return m_signalScheduleEnded;
+}
+
+sigc::signal<void, int> &ClockThread::signal_new_year() {
+  return m_signalNewYear;
 }
 
 bool ClockThread::parseTime24(const std::string &time24, int &hour,
@@ -261,6 +266,7 @@ void ClockThread::threadLoop() {
 
     const std::string newDate = formatDate(local_tm);
     const std::string newTime = formatTime(local_tm);
+    const int currentYear = local_tm.tm_year + 1900;
 
     bool needDispatch = false;
 
@@ -293,6 +299,16 @@ void ClockThread::threadLoop() {
 
         PendingEmit pe;
         pe.type = PendingEmit::Type::Tick;
+        m_pendingEmits.push_back(pe);
+        needDispatch = true;
+      }
+
+      if (currentYear != m_lastYear) {
+        m_lastYear = currentYear;
+
+        PendingEmit pe;
+        pe.type = PendingEmit::Type::NewYear;
+        pe.year = currentYear;
         m_pendingEmits.push_back(pe);
         needDispatch = true;
       }
@@ -355,6 +371,9 @@ void ClockThread::processMainThreadDispatch() {
 
     case PendingEmit::Type::ScheduleEnded:
       m_signalScheduleEnded.emit(e.schedule);
+      break;
+    case PendingEmit::Type::NewYear:
+      m_signalNewYear.emit(e.year);
       break;
     }
   }

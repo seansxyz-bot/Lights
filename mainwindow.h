@@ -142,6 +142,7 @@ private:
   sigc::connection m_themeConn;
   sigc::connection m_newHourConn;
   sigc::connection m_newMinuteConn;
+  sigc::connection m_newYearConn;
   sigc::connection m_scheduledEventConn;
   sigc::connection m_doorbellConn;
   sigc::connection m_bluetoothPollConn;
@@ -217,4 +218,16 @@ private:
   void updateOptions(const Options &options);
   void updateScheduleEntry(int index, const Schedule &entry);
   void getAvgColor(int allOrGroup, int &r, int &g, int &b);
+  void onNewYear(int year);
+  bool updateMoveableHolidayDates(int year);
+
+  static bool isLeapYear(int year);
+  static int daysInMonth(int year, int month);
+  static int weekdaySunday0(int year, int month, int day);
+
+  static std::string mmdd(int month, int day);
+  static std::pair<int, int> easterSunday(int year);
+  static std::pair<int, int> lastMondayOfMay(int year);
+  static std::pair<int, int> firstMondayOfSeptember(int year);
+  static std::pair<int, int> fourthThursdayOfNovember(int year);
 };
