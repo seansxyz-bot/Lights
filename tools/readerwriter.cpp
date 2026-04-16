@@ -5,29 +5,62 @@
 HttpHelper http;
 std::atomic<bool> writeToServer{true};
 
-std::vector<LEDData> readLEDInfo(std::string path) {
-  path += std::string("/led_info");
-  // Attempt to open the file for reading
+std::vector<LEDData> readLEDInfo(const std::string path) {
+  const std::string dbPath = path + "/lights.db";
   std::vector<LEDData> data;
-  std::ifstream file(path);
-  if (!file.is_open()) {
-    std::cerr << "Failed to open the file." << std::endl;
+
+  sqlite3 *db = nullptr;
+  if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
+    std::cerr << "Failed to open DB: " << dbPath << "\n";
+    if (db)
+      sqlite3_close(db);
     return data;
   }
-  // Read the file line by line
-  while (!file.eof()) {
+
+  const char *countSql = "SELECT COUNT(*) FROM led_info;";
+  sqlite3_stmt *countStmt = nullptr;
+
+  if (sqlite3_prepare_v2(db, countSql, -1, &countStmt, nullptr) == SQLITE_OK) {
+    if (sqlite3_step(countStmt) == SQLITE_ROW) {
+    }
+  }
+  sqlite3_finalize(countStmt);
+
+  const char *sql = R"(
+    SELECT name, led_group, red_pin, red_value,
+           grn_pin, grn_value, blu_pin, blu_value
+    FROM led_info
+    ORDER BY red_pin;
+  )";
+
+  sqlite3_stmt *stmt = nullptr;
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    std::cerr << "Failed to prepare led_info query: " << sqlite3_errmsg(db)
+              << "\n";
+    sqlite3_close(db);
+    return data;
+  }
+
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
     LEDData d;
-    file >> d.name >> d.group >> d.redPin >> d.redVal >> d.grnPin >> d.grnVal >>
-        d.bluPin >> d.bluVal;
+
+    const unsigned char *nameText = sqlite3_column_text(stmt, 0);
+    d.name = nameText ? reinterpret_cast<const char *>(nameText) : "";
+    d.group = sqlite3_column_int(stmt, 1);
+    d.redPin = sqlite3_column_int(stmt, 2);
+    d.redVal = sqlite3_column_int(stmt, 3);
+    d.grnPin = sqlite3_column_int(stmt, 4);
+    d.grnVal = sqlite3_column_int(stmt, 5);
+    d.bluPin = sqlite3_column_int(stmt, 6);
+    d.bluVal = sqlite3_column_int(stmt, 7);
+
     data.push_back(d);
   }
 
-  data.pop_back();
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
 
   if (writeToServer) {
-    // http.sendLEDsAsync("https://lights.seansxyz.com/lights_apis/sync.php",
-    // data,
-    //                    DEVICE);
     http.sendLEDsAsync("http://192.168.1.100/lights_apis/sync.php", data,
                        DEVICE);
   }
@@ -35,78 +68,212 @@ std::vector<LEDData> readLEDInfo(std::string path) {
   return data;
 }
 
-int writeLEDInfo(std::string path, std::vector<LEDData> data) {
-  path += std::string("/led_info");
-  std::ofstream file(path);
-  int success = 0;
-  if (file.is_open()) {
-    const int len = data.size();
-    for (int i = 0; i < len; i++) {
-      LEDData d = data[i];
-      file << d.name << "\t" << d.group << "\t" << d.redPin << "\t" << d.redVal
-           << "\t" << d.grnPin << "\t" << d.grnVal << "\t" << d.bluPin << "\t"
-           << d.bluVal << std::endl;
-    }
-    success = 1;
+int writeLEDInfo(const std::string path, const std::vector<LEDData> data) {
+  const std::string dbPath = path + "/lights.db";
+
+  sqlite3 *db = nullptr;
+  if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
+    std::cerr << "Failed to open DB: " << dbPath << "\n";
+    if (db)
+      sqlite3_close(db);
+    return 0;
   }
 
-  if (writeToServer) {
-    //   http.sendLEDsAsync("https://lights.seansxyz.com/lights_apis/sync.php",
-    //   data,
-    //                      DEVICE);
+  char *errMsg = nullptr;
+  if (sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, &errMsg) !=
+      SQLITE_OK) {
+    std::cerr << "Failed to begin transaction: "
+              << (errMsg ? errMsg : "unknown error") << "\n";
+    sqlite3_free(errMsg);
+    sqlite3_close(db);
+    return 0;
+  }
+
+  if (sqlite3_exec(db, "DELETE FROM led_info;", nullptr, nullptr, &errMsg) !=
+      SQLITE_OK) {
+    std::cerr << "Failed to clear led_info: "
+              << (errMsg ? errMsg : "unknown error") << "\n";
+    sqlite3_free(errMsg);
+    sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+    sqlite3_close(db);
+    return 0;
+  }
+
+  const char *sql = R"(
+    INSERT INTO led_info
+    (name, led_group, red_pin, red_value, grn_pin, grn_value, blu_pin, blu_value)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+  )";
+
+  sqlite3_stmt *stmt = nullptr;
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    std::cerr << "Failed to prepare led_info insert: " << sqlite3_errmsg(db)
+              << "\n";
+    sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+    sqlite3_close(db);
+    return 0;
+  }
+
+  bool ok = true;
+
+  for (const auto &d : data) {
+    sqlite3_reset(stmt);
+    sqlite3_clear_bindings(stmt);
+
+    sqlite3_bind_text(stmt, 1, d.name.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 2, d.group);
+    sqlite3_bind_int(stmt, 3, d.redPin);
+    sqlite3_bind_int(stmt, 4, d.redVal);
+    sqlite3_bind_int(stmt, 5, d.grnPin);
+    sqlite3_bind_int(stmt, 6, d.grnVal);
+    sqlite3_bind_int(stmt, 7, d.bluPin);
+    sqlite3_bind_int(stmt, 8, d.bluVal);
+
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+      std::cerr << "Failed writing LED row '" << d.name
+                << "': " << sqlite3_errmsg(db) << "\n";
+      ok = false;
+      break;
+    }
+  }
+
+  sqlite3_finalize(stmt);
+
+  if (ok) {
+    if (sqlite3_exec(db, "COMMIT;", nullptr, nullptr, &errMsg) != SQLITE_OK) {
+      std::cerr << "Failed to commit led_info write: "
+                << (errMsg ? errMsg : "unknown error") << "\n";
+      sqlite3_free(errMsg);
+      ok = false;
+    }
+  } else {
+    sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+  }
+
+  sqlite3_close(db);
+
+  if (ok && writeToServer) {
     http.sendLEDsAsync("http://192.168.1.100/lights_apis/sync.php", data,
                        DEVICE);
   }
-  file.close();
-  return success;
+
+  return ok ? 1 : 0;
 }
 
-Options readOptions(std::string path) {
-  // Attempt to open the file for reading
-  std::ifstream file(path + std::string("/option"));
-  Options opts;
-  if (!file.is_open()) {
-    opts.sensor = 1;
-    opts.on = 1;
-    opts.theme = 0;
-    opts.ptrn = 0;
-    writeOptions(path, opts);
-    return readOptions(path);
+Options readOptions(const std::string path) {
+  const std::string dbPath = path + "/lights.db";
+  Options opts{};
+  opts.sensor = 1;
+  opts.on = 1;
+  opts.theme = 0;
+  opts.ptrn = 0;
+
+  sqlite3 *db = nullptr;
+  if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
+    std::cerr << "Failed to open DB: " << dbPath << "\n";
+    if (db)
+      sqlite3_close(db);
+
+    if (writeToServer) {
+      http.sendOptionsAsync("http://192.168.1.100/lights_apis/sync.php", opts,
+                            DEVICE);
+    }
+    return opts;
   }
 
-  std::string holder;
+  const char *sql = "SELECT name, value FROM options;";
+  sqlite3_stmt *stmt = nullptr;
 
-  // Read the file line by line
-  file >> holder >> opts.sensor >> holder >> opts.on >> holder >> opts.theme >>
-      holder >> opts.ptrn >> holder;
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+      const unsigned char *nameText = sqlite3_column_text(stmt, 0);
+      int value = sqlite3_column_int(stmt, 1);
+
+      if (!nameText)
+        continue;
+
+      std::string name(reinterpret_cast<const char *>(nameText));
+
+      if (name == "auto")
+        opts.sensor = value;
+      else if (name == "on")
+        opts.on = value;
+      else if (name == "theme")
+        opts.theme = value;
+      else if (name == "ptrn")
+        opts.ptrn = value;
+    }
+  } else {
+    std::cerr << "Failed to prepare options query: " << sqlite3_errmsg(db)
+              << "\n";
+  }
+
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
 
   if (writeToServer) {
-    // http.sendOptionsAsync("https://lights.seansxyz.com/lights_apis/sync.php",
-    //                       opts, DEVICE);
     http.sendOptionsAsync("http://192.168.1.100/lights_apis/sync.php", opts,
                           DEVICE);
   }
+
   return opts;
 }
 
-int writeOptions(std::string path, Options data) {
-  std::ofstream file(path + std::string("/option"));
-  int success = 0;
-  if (file.is_open()) {
-    file << "Auto" << "\t" << data.sensor << std::endl;
-    file << "ON" << "\t" << data.on << std::endl;
-    file << "TH" << "\t" << data.theme << std::endl;
-    file << "PT" << "\t" << data.ptrn << std::endl;
-    success = 1;
+int writeOptions(const std::string path, const Options data) {
+  const std::string dbPath = path + "/lights.db";
+  sqlite3 *db = nullptr;
+
+  if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
+    std::cerr << "Failed to open DB: " << dbPath << "\n";
+    if (db)
+      sqlite3_close(db);
+    return 0;
   }
-  if (writeToServer) {
-    // http.sendOptionsAsync("https://lights.seansxyz.com/lights_apis/sync.php",
-    //                       data, DEVICE);
+
+  const char *sql = R"(
+    INSERT INTO options (name, value)
+    VALUES (?, ?)
+    ON CONFLICT(name) DO UPDATE SET value = excluded.value;
+  )";
+
+  sqlite3_stmt *stmt = nullptr;
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    std::cerr << "Failed to prepare options upsert: " << sqlite3_errmsg(db)
+              << "\n";
+    sqlite3_close(db);
+    return 0;
+  }
+
+  auto writeOne = [&](const std::string &name, int value) -> bool {
+    sqlite3_reset(stmt);
+    sqlite3_clear_bindings(stmt);
+
+    sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 2, value);
+
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+      std::cerr << "Failed writing option '" << name
+                << "': " << sqlite3_errmsg(db) << "\n";
+      return false;
+    }
+    return true;
+  };
+
+  bool ok = true;
+  ok &= writeOne("auto", data.sensor);
+  ok &= writeOne("on", data.on);
+  ok &= writeOne("theme", data.theme);
+  ok &= writeOne("ptrn", data.ptrn);
+
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+
+  if (ok && writeToServer) {
     http.sendOptionsAsync("http://192.168.1.100/lights_apis/sync.php", data,
                           DEVICE);
   }
-  file.close();
-  return success;
+
+  return ok ? 1 : 0;
 }
 
 std::vector<Schedule> readSchedule(const std::string path1) {

@@ -47,7 +47,12 @@ private:
 
 } // namespace
 
-BTControl::BTControl(const std::string &dbPath) : m_dbPath(dbPath) {}
+BTControl::BTControl(const std::string &dbPath)
+    : m_dbPath(dbPath + "lights.db") {
+  system(
+      std::string("sudo cp " + dbPath + "/main.conf /etc/bluetooth/main.conf")
+          .c_str());
+}
 
 bool BTControl::init() {
   LOG_INFO() << "BTControl init dbPath=" << m_dbPath;

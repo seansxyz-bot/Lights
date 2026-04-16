@@ -33,8 +33,7 @@ static bool setBluetoothRfkillBlocked(bool blocked) {
   return rc == 0;
 }
 
-MainWindow::MainWindow()
-    : m_btControl(std::string(SETTINGS_PATH) + "/lights.db") {
+MainWindow::MainWindow() : m_btControl(std::string(SETTINGS_PATH)) {
   Logger::useStdOutAndFile(LOG_FILE_MSTR, true);
   LOG_INFO() << "Logger initialized";
   LOG_INFO() << "MainWindow ctor begin";
@@ -1165,7 +1164,11 @@ void MainWindow::onDoorbellChanged(bool pressed) {
   LOG_INFO() << "Doorbell changed: " << (pressed ? "PRESSED" : "RELEASED");
 
   if (pressed) {
-    // trigger animation, sound, page, whatever
+    std::string cmd =
+        "paplay --device=alsa_output.pci-0000_00_05.0.analog-stereo " +
+        std::string(SETTINGS_PATH) + "/sounds/doorbell.ogg";
+
+    system(cmd.c_str());
   }
 }
 

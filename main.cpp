@@ -24,9 +24,9 @@ void load_css() {
   gtk_style_context_add_provider_for_screen(
       screen, GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_USER);
 
-  // Build full path to ~/.lightcontroller/cust_but.css
+  // Build full path to ~/.lightcontroller/css/cust_but.css
   std::string css_path =
-      std::string(HOME_DIR) + "/.lightcontroller/cust_but.css";
+      std::string(HOME_DIR) + "/.lightcontroller/css/cust_but.css";
 
   GError *error = NULL;
   gtk_css_provider_load_from_path(provider, css_path.c_str(), &error);
