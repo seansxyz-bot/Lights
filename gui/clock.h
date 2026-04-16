@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../threads/clockthread.h"
-#include "../tools/logger.h"
+#include "../utils/logger.h"
 #include <functional>
 #include <gtkmm.h>
 #include <mutex>

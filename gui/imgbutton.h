@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../tools/buttonimagemaker.h"
-#include "../tools/logger.h"
+#include "../utils/buttonimagemaker.h"
+#include "../utils/logger.h"
 
 #if (UBUNTU == 1)
 #define ICON_PATH "/home/dev/.lightcontroller/icons"

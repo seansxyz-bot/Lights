@@ -38,7 +38,19 @@ set(SOURCES
     # --------------------
     # HEADERS (.h)
     # --------------------
+    bluetooth/bluezagent.h
+    bluetooth/bluezclient.h
+    bluetooth/btcontrol.h
+
+    drivers/gpio/gpiohelper.h
+    drivers/i2c/teensyclient.h
+    drivers/network/httphelper.h
+    drivers/power/ampswitch.h
+    drivers/power/powerswitch.h
+    drivers/sensors/bme280.h
+
     engine/engine.h
+    engine/lightshow.h
     engine/renderer.h
 
     gui/calandar.h
@@ -60,27 +72,37 @@ set(SOURCES
 
     mainwindow.h
 
+    models/types.h
+
+    storage/common.h
+    storage/read.h
+    storage/write.h
+
     threads/clockthread.h
     threads/doorbellthread.h
     threads/gamethread.h
     threads/mobilelightspoller.h
 
-    tools/bme280.h
-    tools/btcontrol.h
-    tools/bluezagent.h
-    tools/buttonimagemaker.h
-    tools/gpiohelper.h
-    tools/httphelper.h
-    tools/lightshow.h
-    tools/logger.h
-    tools/parserhelper.h
-    tools/powerswitch.h
-    tools/readerwriter.h
+    utils/buttonimagemaker.h
+    utils/logger.h
+    utils/parserhelper.h
 
     # --------------------
     # SOURCES (.cpp / .c)
     # --------------------
+    bluetooth/bluezagent.cpp
+    bluetooth/bluezclient.cpp
+    bluetooth/btcontrol.cpp
+
+    drivers/gpio/gpiohelper.cpp
+    drivers/i2c/teensyclient.cpp
+    drivers/network/httphelper.cpp
+    drivers/power/ampswitch.cpp
+    drivers/power/powerswitch.cpp
+    drivers/sensors/bme280.c
+
     engine/engine.cpp
+    engine/lightshow.cpp
     engine/renderer.cpp
 
     gui/calandar.cpp
@@ -101,27 +123,20 @@ set(SOURCES
     main.cpp
     mainwindow.cpp
 
+    storage/common.cpp
+    storage/read.cpp
+    storage/write.cpp
+
     threads/clockthread.cpp
     threads/doorbellthread.cpp
     threads/gamethread.cpp
     threads/mobilelightspoller.cpp
 
-    tools/bme280.c
-    tools/btcontrol.cpp
-    tools/bluezagent.cpp
-    tools/gpiohelper.cpp
-    tools/httphelper.cpp
-    tools/lightshow.cpp
-    tools/parserhelper.cpp
-    tools/powerswitch.cpp
-    tools/readerwriter.cpp
+    utils/parserhelper.cpp
 )
 
 add_executable(LightingControl ${SOURCES}
-    tools/teensyclient.h tools/teensyclient.cpp
-    tools/ampswitch.h tools/ampswitch.cpp
-    tools/bluezclient.h tools/bluezclient.cpp
-    )
+)
 
 # Includes
 target_include_directories(LightingControl PRIVATE

@@ -1,6 +1,6 @@
 #include "home.h"
 
-#include "../tools/logger.h"
+#include "../utils/logger.h"
 #include "imgbutton.h"
 
 #if (UBUNTU == 1)

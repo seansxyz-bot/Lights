@@ -1,6 +1,6 @@
 #include "clock.h"
 
-#include "../tools/logger.h"
+#include "../utils/logger.h"
 
 #include <chrono>
 #include <ctime>

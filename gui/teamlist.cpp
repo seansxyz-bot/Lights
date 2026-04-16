@@ -1,6 +1,6 @@
 #include "teamlist.h"
 
-#include "../tools/logger.h"
+#include "../utils/logger.h"
 #include "imgbutton.h"
 
 TeamList::TeamList(const std::string &iconPath, const std::string &teamsDbPath)
@@ -49,7 +49,7 @@ TeamList::TeamList(const std::string &iconPath, const std::string &teamsDbPath)
 }
 
 void TeamList::reload() {
-  m_teams = readTeams(m_teamsDbPath);
+  // m_teams = readTeams(m_teamsDbPath);
   rebuild_rows();
   show_all_children();
 }

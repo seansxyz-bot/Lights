@@ -1,5 +1,7 @@
 #include "mainwindow.h"
 
+#include "drivers/network/httphelper.h"
+#include "drivers/sensors/bme280.h"
 #include "engine/engine.h"
 #include "gui/deltaall.h"
 #include "gui/deltagroup.h"
@@ -8,8 +10,6 @@
 #include "gui/patterns.h"
 #include "gui/settings.h"
 #include "gui/themes.h"
-#include "tools/bme280.h"
-#include "tools/httphelper.h"
 #include <chrono>
 #include <ctime>
 #include <gtkmm.h>
@@ -61,10 +61,6 @@ MainWindow::MainWindow() : m_btControl(std::string(SETTINGS_PATH)) {
 
 void MainWindow::initializeStartupState() {
 
-  if (!m_ampSwitch.setEnabled(false)) {
-    LOG_WARN() << "Failed to turn amp off at startup: "
-               << m_ampSwitch.lastError();
-  }
   m_bluetoothState = 0;
 
   LOG_INFO() << "BT powerOn: rfkill unblock bluetooth";
@@ -75,6 +71,22 @@ void MainWindow::initializeStartupState() {
       startBluetoothTransition(false);
     }
   });
+
+  LOG_INFO() << "Applying startup power state";
+  if (m_options.on) {
+    if (!m_powerSwitch.setEnabled(false)) {
+      LOG_WARN() << "Failed to set startup power on: "
+                 << m_powerSwitch.lastError();
+    } else {
+      m_options.on = 0;
+      writeOptions(SETTINGS_PATH, m_options);
+    }
+  }
+
+  if (!m_ampSwitch.setEnabled(false)) {
+    LOG_WARN() << "Failed to turn amp off at startup: "
+               << m_ampSwitch.lastError();
+  }
 }
 
 void MainWindow::loadSettings() {
@@ -107,10 +119,6 @@ void MainWindow::startThreads() {
   ClockThread::instance().start();
   ClockThread::instance().setSchedules(m_schedule);
 
-  LOG_INFO() << "Starting PowerSwitch";
-  m_powerThread.start();
-  if (m_options.on)
-    m_powerThread.setEnabled(m_options, true);
   LOG_INFO() << "Starting DoorbellThread";
   m_doorbellThread.start();
   m_mobileLightsPoller =
@@ -131,8 +139,10 @@ void MainWindow::startConnections() {
   m_newMinuteConn =
       ClockThread::instance().signal_new_minute().connect([this](int minute) {
         LOG_INFO() << "Top of the minute: " << minute;
-        if (m_options.sensor)
-          m_powerThread.setEnabled(m_options, gpio.read(PIN_SENSOR, true));
+        if (m_options.sensor) {
+          m_options.on = gpio.read(PIN_SENSOR, true);
+          m_powerSwitch.setEnabled(m_options.on);
+        }
       });
   m_newYearConn =
       ClockThread::instance().signal_new_year().connect([this](int year) {
@@ -160,7 +170,7 @@ void MainWindow::startConnections() {
   m_btUiDispatcher.connect(
       sigc::mem_fun(*this, &MainWindow::onBluetoothWorkerFinished));
 
-  m_powerChangedConn = m_powerThread.signal_power_changed().connect(
+  m_powerChangedConn = m_powerSwitch.signal_power_changed().connect(
       sigc::mem_fun(*this, &MainWindow::onPowerSwitchChanged));
 
   m_btPowerChangedConn = m_btControl.signal_power_changed().connect(
@@ -226,7 +236,7 @@ void MainWindow::connectPageSignals() {
         [this]() { showDeltaGroupPage(); });
 
     m_homePage->signal_themes_requested().connect(
-        [this]() { showThemesPage(false); });
+        [this]() { showThemesPage(); });
 
     m_homePage->signal_patterns_requested().connect(
         [this]() { showPatternPage(); });
@@ -349,13 +359,17 @@ void MainWindow::showSettingsPage() {
     m_options.sensor = enabled;
     writeOptions(std::string(SETTINGS_PATH), m_options);
     if (!enabled)
-      m_powerThread.setEnabled(m_options, false);
+      m_powerSwitch.setEnabled(enabled);
   });
 
   m_settingsPage->signal_lights_toggled().connect([this](bool enabled) {
-    m_options.on = enabled;
-    m_powerThread.setEnabled(m_options, enabled);
-    updateLightShowState();
+    if (m_powerSwitch.setEnabled(enabled)) {
+      m_options.on = enabled ? 1 : 0;
+      writeOptions(std::string(SETTINGS_PATH), m_options);
+      updateLightShowState();
+    } else {
+      LOG_WARN() << "Failed to toggle lights: " << m_powerSwitch.lastError();
+    }
   });
 
   m_settingsPage->signal_bluetooth_toggled().connect(
@@ -506,29 +520,19 @@ void MainWindow::onBluetoothWorkerFinished() {
   updateLightShowState();
 }
 
-void MainWindow::showThemesPage(bool schedulerMode) {
-  LOG_INFO() << "showThemesPage requested. schedulerMode=" << schedulerMode;
-
+void MainWindow::showThemesPage() {
   destroyTemporaryPage("themes");
 
-  m_themesPage = Gtk::manage(
-      new Themes(std::string(ICON_PATH), m_options.theme, schedulerMode));
+  m_themesPage =
+      Gtk::manage(new Themes(std::string(ICON_PATH), m_options.theme));
 
-  if (!schedulerMode) {
-    m_themesPage->signal_theme_selected().connect([this](int index) {
-      m_options.theme = index;
-      writeOptions(std::string(SETTINGS_PATH), m_options);
-      m_teensyClient.applyThemePattern(m_options.theme, m_options.ptrn);
-    });
+  m_themesPage->signal_theme_selected().connect([this](int index) {
+    m_options.theme = index;
+    writeOptions(std::string(SETTINGS_PATH), m_options);
+    m_teensyClient.applyThemePattern(m_options.theme, m_options.ptrn);
+  });
 
-    m_themesPage->signal_done().connect([this]() { showHomePage(); });
-  } else {
-    m_themesPage->signal_schedule_requested().connect([this](int themeIndex) {
-      LOG_INFO() << "Theme scheduler requested for theme index " << themeIndex;
-    });
-
-    m_themesPage->signal_done().connect([this]() { showSettingsPage(); });
-  }
+  m_themesPage->signal_done().connect([this]() { showHomePage(); });
 
   m_stack.add(*m_themesPage, "themes");
   m_stack.show_all_children();
@@ -1314,9 +1318,8 @@ void MainWindow::onPowerSwitchChanged(bool enabled) {
   LOG_INFO() << "MainWindow: power switch changed -> "
              << (enabled ? "ON" : "OFF");
 
-  m_options.on = enabled;
+  m_options.on = enabled ? 1 : 0;
   writeOptions(SETTINGS_PATH, m_options);
-
   updateLightShowState();
 }
 
@@ -1682,7 +1685,10 @@ MainWindow::~MainWindow() {
   if (m_scheduledEventConn.connected())
     m_scheduledEventConn.disconnect();
 
-  m_powerThread.stop();
+  if (!m_powerSwitch.setEnabled(false)) {
+    LOG_WARN() << "Failed to turn power off in dtor: "
+               << m_powerSwitch.lastError();
+  }
   m_doorbellThread.stop();
 
   if (m_mobileLightsPoller)

@@ -6,7 +6,7 @@
 
 #include <gtkmm.h>
 
-#include "../tools/gpiohelper.h"
+#include "../drivers/gpio/gpiohelper.h"
 
 class DoorbellThread {
 public:

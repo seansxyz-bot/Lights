@@ -1,6 +1,7 @@
 #pragma once
 
-#include "../tools/readerwriter.h"
+#include "../storage/read.h"
+#include "../storage/write.h"
 #include <gtkmm.h>
 #include <sigc++/sigc++.h>
 

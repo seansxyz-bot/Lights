@@ -5,7 +5,8 @@
 #include <sigc++/sigc++.h>
 #include <string>
 
-#include "../tools/readerwriter.h"
+#include "../storage/read.h"
+#include "../storage/write.h"
 
 class ImageButton;
 

@@ -5,8 +5,9 @@
 #include <string>
 #include <vector>
 
-#include "../tools/readerwriter.h"
-#include "../tools/teensyclient.h"
+#include "../storage/read.h"
+#include "../storage/write.h"
+#include "../drivers/i2c/teensyclient.h"
 #include "colorwheelpicker.h"
 
 class ImageButton;

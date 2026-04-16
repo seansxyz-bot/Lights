@@ -1,7 +1,7 @@
 #include "editteam.h"
 
-#include "../tools/httphelper.h"
-#include "../tools/logger.h"
+#include "../drivers/network/httphelper.h"
+#include "../utils/logger.h"
 #include "imgbutton.h"
 
 #include <algorithm>
@@ -491,14 +491,14 @@ void EditTeam::on_save() {
   m_team.themeName = m_themeNameEntry.get_text();
   m_team.enabled = 1;
 
-  const bool teamOk = writeTeam(m_teamsDbPath, m_team);
+  // const bool teamOk = writeTeam(m_teamsDbPath, m_team);
   const bool colorsOk = saveThemeColorsByThemeName(
       m_team.themeName, m_color1Entry.get_text(), m_color2Entry.get_text());
   const bool logoOk = !m_logoUrlEntry.get_text().empty()
                           ? saveLogoFromUrl(m_logoUrlEntry.get_text())
                           : saveLogoPreviewToDisk();
 
-  if (teamOk && colorsOk && logoOk) {
+  if (/*teamOk &&*/ colorsOk && logoOk) {
     if (!m_logoUrlEntry.get_text().empty() && !logoOk) {
       LOG_WARN()
           << "Team saved, colors saved, preview saved, logo URL save failed";

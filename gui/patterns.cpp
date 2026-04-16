@@ -1,6 +1,6 @@
 #include "patterns.h"
 
-#include "../tools/logger.h"
+#include "../utils/logger.h"
 #include "imgbutton.h"
 
 Patterns::Patterns(const std::string &iconPath, int currentPattern)

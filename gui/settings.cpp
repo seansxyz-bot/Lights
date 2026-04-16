@@ -1,6 +1,6 @@
 #include "settings.h"
 
-#include "../tools/logger.h"
+#include "../utils/logger.h"
 #include "imgbutton.h"
 
 Settings::Settings(const std::string &iconPath, bool autoSensorOn,

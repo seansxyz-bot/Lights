@@ -1,6 +1,6 @@
 #include "editthemepage.h"
 
-#include "../tools/logger.h"
+#include "../utils/logger.h"
 #include "imgbutton.h"
 
 EditThemePage::EditThemePage(const std::string &iconPath, const Theme &theme,

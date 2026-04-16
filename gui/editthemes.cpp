@@ -1,7 +1,7 @@
 #include "editthemes.h"
 
-#include "../tools//buttonimagemaker.h"
-#include "../tools/logger.h"
+#include "../utils//buttonimagemaker.h"
+#include "../utils/logger.h"
 #include "imgbutton.h"
 
 EditThemes::EditThemes(const std::string &settingsPath,

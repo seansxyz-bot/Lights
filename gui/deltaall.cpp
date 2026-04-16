@@ -1,6 +1,6 @@
 #include "deltaall.h"
 
-#include "../tools/logger.h"
+#include "../utils/logger.h"
 #include "colorwheelpicker.h"
 #include "imgbutton.h"
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "tools/logger.h"
+#include "utils/logger.h"
 
 #if (UBUNTU == 1)
 #define BUTTON_WIDTH 384
@@ -14,6 +14,12 @@
 #define COLOR_BAR_SIZE 35
 #endif
 
+#include "bluetooth/bluezagent.h"
+#include "bluetooth/btcontrol.h"
+#include "drivers/gpio/gpiohelper.h"
+#include "drivers/power/ampswitch.h"
+#include "drivers/power/powerswitch.h"
+#include "engine/lightshow.h"
 #include "gui/clock.h"
 #include "gui/editteam.h"
 #include "gui/editthemepage.h"
@@ -24,13 +30,7 @@
 #include "gui/toastmessage.h"
 #include "threads/doorbellthread.h"
 #include "threads/mobilelightspoller.h"
-#include "tools/ampswitch.h"
-#include "tools/bluezagent.h"
-#include "tools/btcontrol.h"
-#include "tools/gpiohelper.h"
-#include "tools/lightshow.h"
-#include "tools/parserhelper.h"
-#include "tools/powerswitch.h"
+#include "utils/parserhelper.h"
 #include <atomic>
 #include <gtkmm.h>
 #include <memory>
@@ -87,7 +87,7 @@ private:
   void onPowerSwitchChanged(bool enabled);
   void onBluetoothPowerChanged(bool enabled);
 
-  PowerSwitch m_powerThread;
+  PowerSwitch m_powerSwitch;
   int m_groupSelection = 0;
   int m_bluetoothState = 0;
   GPIOHelper gpio;
@@ -173,7 +173,7 @@ private:
   void showPage(const std::string &pageName);
   void showHomePage();
   void showSettingsPage();
-  void showThemesPage(bool schedulerMode = false);
+  void showThemesPage();
   void showPatternPage();
   void showDeltaAllPage();
   void showDeltaGroupPage();

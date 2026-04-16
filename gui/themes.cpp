@@ -1,12 +1,10 @@
 #include "themes.h"
 
-#include "../tools/logger.h"
+#include "../utils/logger.h"
 #include "imgbutton.h"
 
-Themes::Themes(const std::string &iconPath, int currentTheme,
-               bool schedulerMode)
-    : Gtk::Box(Gtk::ORIENTATION_VERTICAL), m_schedulerMode(schedulerMode) {
-  LOG_INFO() << "Themes ctor. schedulerMode=" << m_schedulerMode;
+Themes::Themes(const std::string &iconPath, int currentTheme)
+    : Gtk::Box(Gtk::ORIENTATION_VERTICAL) {
 
   auto boxA = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
   auto boxB = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
@@ -49,8 +47,7 @@ Themes::Themes(const std::string &iconPath, int currentTheme,
   auto mariners = Gtk::manage(new ImageButton(iconPath + "/mariners.png", 160));
   auto ok = Gtk::manage(new ImageButton(iconPath + "/ok.png", 96));
 
-  if (!m_schedulerMode)
-    boxA->pack_start(*none, Gtk::PACK_SHRINK);
+  boxA->pack_start(*none, Gtk::PACK_SHRINK);
 
   boxA->pack_start(*newyear, Gtk::PACK_SHRINK);
   boxA->pack_start(*valentine, Gtk::PACK_SHRINK);
@@ -69,8 +66,7 @@ Themes::Themes(const std::string &iconPath, int currentTheme,
   boxC->pack_start(*thanksgiving, Gtk::PACK_SHRINK);
   boxC->pack_start(*xmas, Gtk::PACK_SHRINK);
 
-  if (!m_schedulerMode)
-    boxD->pack_start(*cops, Gtk::PACK_SHRINK);
+  boxD->pack_start(*cops, Gtk::PACK_SHRINK);
 
   boxD->pack_start(*seahawks, Gtk::PACK_SHRINK);
   boxD->pack_start(*kraken, Gtk::PACK_SHRINK);
@@ -90,34 +86,21 @@ Themes::Themes(const std::string &iconPath, int currentTheme,
   pack_start(*boxD, Gtk::PACK_SHRINK);
   pack_end(*ok, Gtk::PACK_SHRINK);
 
-  if (!m_schedulerMode) {
-    m_buttons = {none, newyear,  valentine, dad,          spd,
-                 sean, easter,   memorial,  july4,        anniversary,
-                 mom,  labor,    halloween, thanksgiving, xmas,
-                 cops, seahawks, kraken,    mariners};
-  } else {
-    // scheduler mode maps to scheduled themes only, skipping "none"
-    m_buttons = {newyear, valentine, dad,          spd,         sean,
-                 easter,  memorial,  july4,        anniversary, mom,
-                 labor,   halloween, thanksgiving, xmas,        seahawks,
-                 kraken,  mariners};
-  }
+  m_buttons = {none, newyear,  valentine, dad,          spd,
+               sean, easter,   memorial,  july4,        anniversary,
+               mom,  labor,    halloween, thanksgiving, xmas,
+               cops, seahawks, kraken,    mariners};
 
   for (int i = 0; i < static_cast<int>(m_buttons.size()); ++i) {
     m_buttons[i]->signal_clicked().connect([this, i]() {
-      if (m_schedulerMode) {
-        m_signalScheduleRequested.emit(i);
-      } else {
-        set_selected(i);
-        m_signalThemeSelected.emit(i);
-      }
+      set_selected(i);
+      m_signalThemeSelected.emit(i);
     });
   }
 
   ok->signal_clicked().connect([this]() { m_signalDone.emit(); });
 
-  if (!m_schedulerMode)
-    set_selected(currentTheme);
+  set_selected(currentTheme);
 
   show_all_children();
 }

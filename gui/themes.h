@@ -9,8 +9,7 @@ class ImageButton;
 
 class Themes : public Gtk::Box {
 public:
-  Themes(const std::string &iconPath, int currentTheme,
-         bool schedulerMode = false);
+  Themes(const std::string &iconPath, int currentTheme);
   virtual ~Themes() = default;
 
   sigc::signal<void, int> &signal_theme_selected();
@@ -21,7 +20,6 @@ private:
   void set_selected(int index);
 
 private:
-  bool m_schedulerMode = false;
   std::vector<ImageButton *> m_buttons;
 
   sigc::signal<void, int> m_signalThemeSelected;
