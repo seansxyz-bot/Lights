@@ -271,72 +271,62 @@ std::vector<Theme> readThemeColors(const std::string &path) {
     return out;
   }
 
-  const char *themeSql = R"(
-    SELECT id, name
+  const char *sql = R"(
+    SELECT theme_id, name, color_index, r, g, b
     FROM themes
-    ORDER BY id
+    ORDER BY theme_id, color_index
   )";
 
-  sqlite3_stmt *themeStmt = nullptr;
-  if (sqlite3_prepare_v2(db, themeSql, -1, &themeStmt, nullptr) != SQLITE_OK) {
+  sqlite3_stmt *stmt = nullptr;
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     std::cerr << "Failed to prepare theme query: " << sqlite3_errmsg(db)
               << "\n";
     sqlite3_close(db);
     return out;
   }
 
-  while (sqlite3_step(themeStmt) == SQLITE_ROW) {
-    Theme t;
-    t.id = sqlite3_column_int(themeStmt, 0);
+  int currentThemeId = -1;
+  Theme *currentTheme = nullptr;
 
-    const unsigned char *nameText = sqlite3_column_text(themeStmt, 1);
-    t.name = nameText ? reinterpret_cast<const char *>(nameText) : "";
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    const int themeId = sqlite3_column_int(stmt, 0);
 
-    out.push_back(t);
-  }
-  sqlite3_finalize(themeStmt);
+    if (themeId != currentThemeId) {
+      Theme t;
+      t.id = themeId;
 
-  const char *colorSql = R"(
-    SELECT r, g, b
-    FROM theme_colors
-    WHERE theme_id = ?
-    ORDER BY color_order
-  )";
+      const unsigned char *nameText = sqlite3_column_text(stmt, 1);
+      t.name = nameText ? reinterpret_cast<const char *>(nameText) : "";
 
-  sqlite3_stmt *colorStmt = nullptr;
-  if (sqlite3_prepare_v2(db, colorSql, -1, &colorStmt, nullptr) != SQLITE_OK) {
-    std::cerr << "Failed to prepare color query: " << sqlite3_errmsg(db)
-              << "\n";
-    sqlite3_close(db);
-    return out;
-  }
-
-  for (auto &theme : out) {
-    sqlite3_reset(colorStmt);
-    sqlite3_clear_bindings(colorStmt);
-    sqlite3_bind_int(colorStmt, 1, theme.id);
-
-    while (sqlite3_step(colorStmt) == SQLITE_ROW) {
-      RGB_Color c;
-      c.r = static_cast<uint8_t>(sqlite3_column_int(colorStmt, 0));
-      c.g = static_cast<uint8_t>(sqlite3_column_int(colorStmt, 1));
-      c.b = static_cast<uint8_t>(sqlite3_column_int(colorStmt, 2));
-      theme.colors.push_back(c);
+      out.push_back(t);
+      currentTheme = &out.back();
+      currentThemeId = themeId;
     }
 
+    if (currentTheme) {
+      RGB_Color c;
+      c.r = static_cast<uint8_t>(sqlite3_column_int(stmt, 3));
+      c.g = static_cast<uint8_t>(sqlite3_column_int(stmt, 4));
+      c.b = static_cast<uint8_t>(sqlite3_column_int(stmt, 5));
+      currentTheme->colors.push_back(c);
+    }
+  }
+
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+
+  for (auto &theme : out) {
     if (theme.colors.empty()) {
       theme.colors.push_back({255, 255, 255});
     }
   }
 
-  sqlite3_finalize(colorStmt);
-  sqlite3_close(db);
   return out;
 }
 
 int writeThemeColors(const std::string &path,
                      const std::vector<Theme> &themes) {
-  const std::string &dbPath = path + "/themes.db";
+  const std::string dbPath = path + "/lights.db";
   sqlite3 *db = nullptr;
 
   if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
@@ -351,72 +341,67 @@ int writeThemeColors(const std::string &path,
     return 0;
   }
 
-  if (!execSQL(db, "DELETE FROM theme_colors;") ||
-      !execSQL(db, "DELETE FROM themes;")) {
+  if (!execSQL(db, "DELETE FROM themes;")) {
     execSQL(db, "ROLLBACK;");
     sqlite3_close(db);
     return 0;
   }
 
-  const char *insertThemeSql = R"(
-    INSERT INTO themes (id, name)
-    VALUES (?, ?)
+  const char *insertSql = R"(
+    INSERT INTO themes (theme_id, name, color_index, r, g, b)
+    VALUES (?, ?, ?, ?, ?, ?)
   )";
 
-  const char *insertColorSql = R"(
-    INSERT INTO theme_colors (theme_id, color_index, r, g, b)
-    VALUES (?, ?, ?, ?, ?)
-  )";
-
-  sqlite3_stmt *themeStmt = nullptr;
-  sqlite3_stmt *colorStmt = nullptr;
-
-  if (sqlite3_prepare_v2(db, insertThemeSql, -1, &themeStmt, nullptr) !=
-          SQLITE_OK ||
-      sqlite3_prepare_v2(db, insertColorSql, -1, &colorStmt, nullptr) !=
-          SQLITE_OK) {
-    std::cerr << "Failed to prepare insert statements\n";
-    if (themeStmt)
-      sqlite3_finalize(themeStmt);
-    if (colorStmt)
-      sqlite3_finalize(colorStmt);
+  sqlite3_stmt *stmt = nullptr;
+  if (sqlite3_prepare_v2(db, insertSql, -1, &stmt, nullptr) != SQLITE_OK) {
+    std::cerr << "Failed to prepare insert statement: " << sqlite3_errmsg(db)
+              << "\n";
     execSQL(db, "ROLLBACK;");
     sqlite3_close(db);
     return 0;
   }
 
   for (const auto &theme : themes) {
-    sqlite3_reset(themeStmt);
-    sqlite3_clear_bindings(themeStmt);
+    if (theme.colors.empty()) {
+      sqlite3_reset(stmt);
+      sqlite3_clear_bindings(stmt);
 
-    sqlite3_bind_int(themeStmt, 1, theme.id);
-    sqlite3_bind_text(themeStmt, 2, theme.name.c_str(), -1, SQLITE_TRANSIENT);
+      sqlite3_bind_int(stmt, 1, theme.id);
+      sqlite3_bind_text(stmt, 2, theme.name.c_str(), -1, SQLITE_TRANSIENT);
+      sqlite3_bind_int(stmt, 3, 0);
+      sqlite3_bind_int(stmt, 4, 255);
+      sqlite3_bind_int(stmt, 5, 255);
+      sqlite3_bind_int(stmt, 6, 255);
 
-    if (sqlite3_step(themeStmt) != SQLITE_DONE) {
-      std::cerr << "Failed inserting theme: " << theme.name << "\n";
-      sqlite3_finalize(themeStmt);
-      sqlite3_finalize(colorStmt);
-      execSQL(db, "ROLLBACK;");
-      sqlite3_close(db);
-      return 0;
+      if (sqlite3_step(stmt) != SQLITE_DONE) {
+        std::cerr << "Failed inserting default color for theme: " << theme.name
+                  << " error: " << sqlite3_errmsg(db) << "\n";
+        sqlite3_finalize(stmt);
+        execSQL(db, "ROLLBACK;");
+        sqlite3_close(db);
+        return 0;
+      }
+
+      continue;
     }
 
-    for (int i = 0; i < static_cast<int>(theme.colors.size()); i++) {
+    for (int i = 0; i < static_cast<int>(theme.colors.size()); ++i) {
       const auto &c = theme.colors[i];
 
-      sqlite3_reset(colorStmt);
-      sqlite3_clear_bindings(colorStmt);
+      sqlite3_reset(stmt);
+      sqlite3_clear_bindings(stmt);
 
-      sqlite3_bind_int(colorStmt, 1, theme.id);
-      sqlite3_bind_int(colorStmt, 2, i);
-      sqlite3_bind_int(colorStmt, 3, c.r);
-      sqlite3_bind_int(colorStmt, 4, c.g);
-      sqlite3_bind_int(colorStmt, 5, c.b);
+      sqlite3_bind_int(stmt, 1, theme.id);
+      sqlite3_bind_text(stmt, 2, theme.name.c_str(), -1, SQLITE_TRANSIENT);
+      sqlite3_bind_int(stmt, 3, i);
+      sqlite3_bind_int(stmt, 4, c.r);
+      sqlite3_bind_int(stmt, 5, c.g);
+      sqlite3_bind_int(stmt, 6, c.b);
 
-      if (sqlite3_step(colorStmt) != SQLITE_DONE) {
-        std::cerr << "Failed inserting color for theme: " << theme.name << "\n";
-        sqlite3_finalize(themeStmt);
-        sqlite3_finalize(colorStmt);
+      if (sqlite3_step(stmt) != SQLITE_DONE) {
+        std::cerr << "Failed inserting color for theme: " << theme.name
+                  << " error: " << sqlite3_errmsg(db) << "\n";
+        sqlite3_finalize(stmt);
         execSQL(db, "ROLLBACK;");
         sqlite3_close(db);
         return 0;
@@ -424,24 +409,7 @@ int writeThemeColors(const std::string &path,
     }
   }
 
-  sqlite3_finalize(themeStmt);
-  sqlite3_finalize(colorStmt);
-
-  int maxId = 0;
-  for (const auto &theme : themes) {
-    if (theme.id > maxId)
-      maxId = theme.id;
-  }
-
-  std::string seqSql =
-      "UPDATE sqlite_sequence SET seq = " + std::to_string(maxId) +
-      " WHERE name = 'themes';";
-
-  if (!execSQL(db, seqSql.c_str())) {
-    execSQL(db, "ROLLBACK;");
-    sqlite3_close(db);
-    return 0;
-  }
+  sqlite3_finalize(stmt);
 
   if (!execSQL(db, "COMMIT;")) {
     execSQL(db, "ROLLBACK;");
