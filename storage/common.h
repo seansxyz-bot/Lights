@@ -15,7 +15,7 @@
 #define SETTINGS_PATH "/home/dev/.lightcontroller"
 #else
 #define HOME_DIR "/home/lights"
-#define SETTINGS_PATH "/home/lights/.lightcontroller"
+#define SETTINGS_PATH "/home/lights/.local/share/lights"
 #endif
 
 extern HttpHelper http;

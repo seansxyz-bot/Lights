@@ -10,6 +10,7 @@
 #include "gui/patterns.h"
 #include "gui/settings.h"
 #include "gui/themes.h"
+#include "utils/ui_metrics.h"
 #include <chrono>
 #include <ctime>
 #include <gtkmm.h>
@@ -571,7 +572,8 @@ void MainWindow::showDeltaAllPage() {
   getAvgColor(-1, r, g, b);
 
   m_deltaAllPage = Gtk::manage(new DeltaAll(
-      std::string(ICON_PATH), r, g, b, COLOR_PICKER_SIZE, COLOR_BAR_SIZE, 96));
+      std::string(ICON_PATH), r, g, b, UiMetrics::color_picker_size(),
+      UiMetrics::color_bar_size(), KEY_PAD_PIXEL_SIZE));
 
   m_deltaAllPage->signal_color_changed().connect([this](int r, int g, int b) {
     for (int i = 0; i < NUM_OF_LEDS; i++) {
@@ -607,7 +609,8 @@ void MainWindow::showDeltaGroupPage() {
 
   m_deltaGroupPage = Gtk::manage(
       new DeltaGroup(std::string(ICON_PATH), m_groupSelection, colors,
-                     COLOR_PICKER_SIZE, COLOR_BAR_SIZE, 96));
+                     UiMetrics::color_picker_size(),
+                     UiMetrics::color_bar_size(), KEY_PAD_PIXEL_SIZE));
 
   m_deltaGroupPage->signal_group_color_changed().connect(
       [this](int group, int r, int g, int b) {
@@ -1264,7 +1267,8 @@ void MainWindow::showEditThemePage(int themeId) {
   }
 
   m_editThemePage = Gtk::manage(new EditThemePage(
-      std::string(ICON_PATH), *it, COLOR_PICKER_SIZE, COLOR_BAR_SIZE, 96));
+      std::string(ICON_PATH), *it, UiMetrics::color_picker_size(),
+      UiMetrics::color_bar_size(), 96));
 
   m_editThemePage->signal_save_requested().connect([this, themeId](
                                                        Theme updatedTheme) {

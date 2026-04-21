@@ -9,16 +9,21 @@ DeltaAll::DeltaAll(const std::string &iconPath, int startR, int startG,
     : Gtk::Box(Gtk::ORIENTATION_VERTICAL) {
   LOG_INFO() << "DeltaAll ctor";
 
-  set_halign(Gtk::ALIGN_CENTER);
-  set_valign(Gtk::ALIGN_FILL);
-  set_spacing(12);
+  set_halign(Gtk::ALIGN_FILL);
+  set_valign(Gtk::ALIGN_START);
+  set_margin_top(DELTAALL_TOP_MARGIN);
+  set_margin_bottom(DELTAALL_BOTTOM_MARGIN);
+
+  m_centBox.set_halign(Gtk::ALIGN_CENTER);
+  m_centBox.set_valign(Gtk::ALIGN_START);
+  m_centBox.set_spacing(DELTAALL_WIDGET_SPACING);
 
   m_picker = Gtk::manage(
       new ColorWheelPicker(iconPath, "Change All LEDs", startR, startG, startB,
                            pickerSize, barSize, keypadPixelSize));
 
   m_picker->set_halign(Gtk::ALIGN_CENTER);
-  m_picker->set_valign(Gtk::ALIGN_FILL);
+  m_picker->set_valign(Gtk::ALIGN_START);
 
   m_picker->signal_color_changed().connect(
       [this](int r, int g, int b) { m_signalColorChanged.emit(r, g, b); });
@@ -33,8 +38,10 @@ DeltaAll::DeltaAll(const std::string &iconPath, int startR, int startG,
     m_signalDone.emit();
   });
 
-  pack_start(*m_picker, Gtk::PACK_EXPAND_WIDGET);
-  pack_start(*m_okBtn, Gtk::PACK_SHRINK);
+  m_centBox.pack_start(*m_picker, Gtk::PACK_SHRINK);
+  m_centBox.pack_start(*m_okBtn, Gtk::PACK_SHRINK);
+
+  pack_start(m_centBox, Gtk::PACK_SHRINK);
 
   show_all_children();
 }

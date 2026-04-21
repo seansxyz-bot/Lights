@@ -4,11 +4,16 @@
 #include <functional>
 #include <gtkmm.h>
 #include <string>
+#if (SCREEN == 1)
+#define KEY_PAD_PIXEL_SIZE 96
+#else
+#define KEY_PAD_PIXEL_SIZE 72
+#endif
 
 class KeyPad : public Gtk::Box {
 public:
-  explicit KeyPad(std::string PATH, int start_value = 0, int pixel_size = 96,
-                  int max_value = 255)
+  explicit KeyPad(std::string PATH, int start_value = 0,
+                  int pixel_size = KEY_PAD_PIXEL_SIZE, int max_value = 255)
       : Gtk::Box(Gtk::ORIENTATION_VERTICAL), m_path(std::move(PATH)),
         m_pixel_size(pixel_size), m_maxValue(max_value) {
 

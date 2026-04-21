@@ -136,6 +136,11 @@ set(SOURCES
 )
 
 add_executable(LightingControl ${SOURCES}
+    utils/ui_metrics.h
+)
+
+set_target_properties(LightingControl PROPERTIES
+    OUTPUT_NAME "LightController"
 )
 
 # Includes

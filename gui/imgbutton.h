@@ -6,7 +6,7 @@
 #if (UBUNTU == 1)
 #define ICON_PATH "/home/dev/.lightcontroller/icons"
 #else
-#define ICON_PATH "/home/lights/.lightcontroller/icons"
+#define ICON_PATH "/home/lights/.local/share/lights/icons"
 #endif
 
 #include <gtkmm.h>

@@ -8,7 +8,7 @@
 
 class GPIOHelper {
 public:
-  GPIOHelper(const std::string &chipName = "gpiochip0");
+  GPIOHelper(const std::string &chipName = "/dev/gpiochip0");
   ~GPIOHelper();
 
   bool read(int line, bool activeLow = true);

@@ -1,22 +1,7 @@
 #include "home.h"
 
-#include "../utils/logger.h"
+#include "../utils/ui_metrics.h"
 #include "imgbutton.h"
-
-#if (UBUNTU == 1)
-#define BUTTON_WIDTH 384
-#define BUTTON_MARGIN 32
-#else
-#define BUTTON_WIDTH 239
-#define BUTTON_MARGIN 20
-#endif
-
-// auto pixbuf =
-//     ButtonImageMaker::create(SETTINGS_PATH, "Dad's Birthday", BUTTON_WIDTH);
-
-// m_deltaAllBtn =
-//     Gtk::manage(new ImageButton(pixbuf, BUTTON_WIDTH, BUTTON_MARGIN, 0));
-// std::string(ICON_PATH) + "/da.png", BUTTON_WIDTH, BUTTON_MARGIN));
 
 Home::Home() : Gtk::Box(Gtk::ORIENTATION_VERTICAL) {
   LOG_INFO() << "Home ctor";
@@ -26,26 +11,37 @@ Home::Home() : Gtk::Box(Gtk::ORIENTATION_VERTICAL) {
 }
 
 void Home::build_ui() {
-  set_halign(Gtk::ALIGN_CENTER);
-  set_valign(Gtk::ALIGN_CENTER);
+  set_halign(Gtk::ALIGN_FILL);
+  set_valign(Gtk::ALIGN_FILL);
+
+  // m_topSpacer.set_size_request(-1, HOME_TOP_MARGIN);
+
+  m_centBox.set_halign(Gtk::ALIGN_CENTER);
+  m_centBox.set_valign(Gtk::ALIGN_START);
+  pack_start(m_centBox, Gtk::PACK_SHRINK);
 
   m_topRow.set_halign(Gtk::ALIGN_CENTER);
   m_bottomRow.set_halign(Gtk::ALIGN_CENTER);
 
-  m_deltaAllBtn = Gtk::manage(new ImageButton(
-      std::string(ICON_PATH) + "/da.png", BUTTON_WIDTH, BUTTON_MARGIN));
+  m_deltaAllBtn = Gtk::manage(
+      new ImageButton(std::string(ICON_PATH) + "/da.png",
+                      UiMetrics::button_side(), UiMetrics::button_margin()));
 
-  m_deltaGroupBtn = Gtk::manage(new ImageButton(
-      std::string(ICON_PATH) + "/dg.png", BUTTON_WIDTH, BUTTON_MARGIN));
+  m_deltaGroupBtn = Gtk::manage(
+      new ImageButton(std::string(ICON_PATH) + "/dg.png",
+                      UiMetrics::button_side(), UiMetrics::button_margin()));
 
-  m_themesBtn = Gtk::manage(new ImageButton(
-      std::string(ICON_PATH) + "/themes.png", BUTTON_WIDTH, BUTTON_MARGIN));
+  m_themesBtn = Gtk::manage(
+      new ImageButton(std::string(ICON_PATH) + "/themes.png",
+                      UiMetrics::button_side(), UiMetrics::button_margin()));
 
-  m_patternsBtn = Gtk::manage(new ImageButton(
-      std::string(ICON_PATH) + "/pattern.png", BUTTON_WIDTH, BUTTON_MARGIN));
+  m_patternsBtn = Gtk::manage(
+      new ImageButton(std::string(ICON_PATH) + "/pattern.png",
+                      UiMetrics::button_side(), UiMetrics::button_margin()));
 
-  m_settingsBtn = Gtk::manage(new ImageButton(
-      std::string(ICON_PATH) + "/settings.png", BUTTON_WIDTH, BUTTON_MARGIN));
+  m_settingsBtn = Gtk::manage(
+      new ImageButton(std::string(ICON_PATH) + "/settings.png",
+                      UiMetrics::button_side(), UiMetrics::button_margin()));
 
   m_topRow.pack_start(*m_deltaAllBtn, Gtk::PACK_SHRINK);
   m_topRow.pack_start(*m_deltaGroupBtn, Gtk::PACK_SHRINK);
@@ -54,8 +50,11 @@ void Home::build_ui() {
   m_bottomRow.pack_start(*m_patternsBtn, Gtk::PACK_SHRINK);
   m_bottomRow.pack_start(*m_settingsBtn, Gtk::PACK_SHRINK);
 
-  pack_start(m_topRow, Gtk::PACK_SHRINK);
-  pack_start(m_bottomRow, Gtk::PACK_SHRINK);
+  m_centBox.pack_start(m_topRow, Gtk::PACK_SHRINK);
+  m_centBox.pack_start(m_bottomRow, Gtk::PACK_SHRINK);
+
+  // pack_start(m_topSpacer, Gtk::PACK_SHRINK);
+  pack_start(m_centBox, Gtk::PACK_EXPAND_WIDGET);
 
   LOG_INFO() << "Home UI built";
 }

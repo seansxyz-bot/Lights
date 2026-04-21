@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <gtkmm.h>
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -12,13 +11,16 @@
 
 class ButtonImageMaker {
 public:
-  static Glib::RefPtr<Gdk::Pixbuf> create(std::string settings_path,
-                                          const std::string &text, int size) {
-    const std::string svgPath = std::string(settings_path) + "/icons/blank.svg";
+  static Glib::RefPtr<Gdk::Pixbuf> create(const std::string &settings_path,
+                                          const std::string &text,
+                                          int side_px) {
+    if (side_px <= 0)
+      return {};
 
-    // --- Load SVG ---
+    const std::string svg_path = settings_path + "/icons/blank.svg";
+
     GError *error = nullptr;
-    RsvgHandle *handle = rsvg_handle_new_from_file(svgPath.c_str(), &error);
+    RsvgHandle *handle = rsvg_handle_new_from_file(svg_path.c_str(), &error);
     if (!handle) {
       if (error) {
         g_warning("SVG load error: %s", error->message);
@@ -27,67 +29,49 @@ public:
       return {};
     }
 
-    // --- Create Cairo surface ---
     auto surface =
-        Cairo::ImageSurface::create(Cairo::FORMAT_ARGB32, size, size);
+        Cairo::ImageSurface::create(Cairo::FORMAT_ARGB32, side_px, side_px);
     auto cr = Cairo::Context::create(surface);
 
-    // --- Render SVG scaled ---
-    RsvgRectangle viewport = {0, 0, (double)size, (double)size};
+    RsvgRectangle viewport = {0, 0, static_cast<double>(side_px),
+                              static_cast<double>(side_px)};
     rsvg_handle_render_document(handle, cr->cobj(), &viewport, nullptr);
-
     g_object_unref(handle);
 
-    // --- Prepare text layout ---
     auto layout = Pango::Layout::create(cr);
-
-    std::vector<std::string> lines = wrapText(text, 11, 3);
-
-    std::string finalText;
-    for (size_t i = 0; i < lines.size(); ++i) {
-      finalText += lines[i];
-      if (i != lines.size() - 1)
-        finalText += "\n";
-    }
-
-    layout->set_text(finalText);
+    layout->set_text(text);
     layout->set_alignment(Pango::ALIGN_CENTER);
+    layout->set_wrap(Pango::WRAP_WORD_CHAR);
 
-    // Helps center multi-line text better
-    layout->set_width((size - int(size * 0.16)) * PANGO_SCALE);
+    const int padding_x = std::max(6, side_px * 8 / 100);
+    const int padding_y = std::max(6, side_px * 12 / 100);
+    const int content_w = std::max(1, side_px - padding_x * 2);
+    const int content_h = std::max(1, side_px - padding_y * 2);
 
-    // --- Auto font sizing ---
-    int fontSize = size / 6;
-    int textWidth = 0, textHeight = 0;
+    layout->set_width(content_w * PANGO_SCALE);
 
-    auto fontDesc = Pango::FontDescription();
-    fontDesc.set_family("Sans");
-    fontDesc.set_weight(Pango::WEIGHT_BOLD);
+    auto font_desc = Pango::FontDescription();
+    font_desc.set_family("Sans");
+    font_desc.set_weight(Pango::WEIGHT_BOLD);
 
-    int paddingX = size * 0.08;
-    int paddingY = size * 0.12;
+    int font_px = std::max(8, side_px / 6);
+    int text_w = 0;
+    int text_h = 0;
 
-    while (fontSize > 8) {
-      fontDesc.set_absolute_size(fontSize * PANGO_SCALE);
-      layout->set_font_description(fontDesc);
+    while (font_px > 8) {
+      font_desc.set_absolute_size(font_px * PANGO_SCALE);
+      layout->set_font_description(font_desc);
+      layout->get_pixel_size(text_w, text_h);
 
-      layout->get_pixel_size(textWidth, textHeight);
-
-      if (textWidth <= (size - paddingX * 2) &&
-          textHeight <= (size - paddingY * 2)) {
+      if (text_w <= content_w && text_h <= content_h)
         break;
-      }
 
-      fontSize -= 2;
+      font_px -= 2;
     }
 
-    // --- Center text ---
-    int x = paddingX;
-    int y = (size - textHeight) / 2;
-
-    // --- Thin black outline ---
-    // 1 px for smaller buttons, 2 px for bigger ones
-    int outline = (size >= 300) ? 2 : 1;
+    const int x = padding_x;
+    const int y = std::max(padding_y, (side_px - text_h) / 2);
+    const int outline = (side_px >= 300) ? 2 : 1;
 
     cr->set_line_join(Cairo::LINE_JOIN_ROUND);
 
@@ -104,45 +88,10 @@ public:
       }
     }
 
-    // --- White text on top ---
     cr->set_source_rgb(1.0, 1.0, 1.0);
     cr->move_to(x, y);
     layout->show_in_cairo_context(cr);
 
-    // --- Convert to Pixbuf ---
-    return Gdk::Pixbuf::create(surface, 0, 0, size, size);
-  }
-
-private:
-  static std::vector<std::string> wrapText(const std::string &text,
-                                           size_t maxChars, size_t maxLines) {
-    std::istringstream iss(text);
-    std::string word;
-
-    std::vector<std::string> lines;
-    std::string current;
-
-    while (iss >> word) {
-      size_t extra = current.empty() ? 0 : 1;
-
-      if (current.size() + extra + word.size() <= maxChars) {
-        if (!current.empty())
-          current += " ";
-        current += word;
-      } else {
-        if (!current.empty())
-          lines.push_back(current);
-
-        current = word;
-
-        if (lines.size() == maxLines - 1)
-          break;
-      }
-    }
-
-    if (!current.empty() && lines.size() < maxLines)
-      lines.push_back(current);
-
-    return lines;
+    return Gdk::Pixbuf::create(surface, 0, 0, side_px, side_px);
   }
 };

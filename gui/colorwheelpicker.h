@@ -15,7 +15,8 @@ public:
   void commit_pending();
   ColorWheelPicker(std::string PATH, const std::string &headerText, int red,
                    int green, int blue, int wheel_diameter = 220,
-                   int bar_width = 26, int keypad_pixel_size = 96);
+                   int bar_width = 26,
+                   int keypad_pixel_size = KEY_PAD_PIXEL_SIZE);
   ~ColorWheelPicker() override = default;
 
   RGB get_rgb() const;
@@ -39,7 +40,7 @@ private:
   Gtk::Box m_pickerRoot{Gtk::ORIENTATION_VERTICAL};
   KeyPad *m_keypad{nullptr};
 
-  int m_keypadPixelSize{96};
+  int m_keypadPixelSize{KEY_PAD_PIXEL_SIZE};
   Gtk::Entry *m_activeEntry{nullptr};
 
   Gtk::Box m_mainRow;

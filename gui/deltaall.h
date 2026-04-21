@@ -4,6 +4,16 @@
 #include <sigc++/sigc++.h>
 #include <string>
 
+#if (SCREEN == 1)
+#define DELTAALL_TOP_MARGIN 24
+#define DELTAALL_WIDGET_SPACING 20
+#define DELTAALL_BOTTOM_MARGIN 12
+#else
+#define DELTAALL_TOP_MARGIN 8
+#define DELTAALL_WIDGET_SPACING 10
+#define DELTAALL_BOTTOM_MARGIN 8
+#endif
+
 class ColorWheelPicker;
 class ImageButton;
 
@@ -17,6 +27,8 @@ public:
   sigc::signal<void> &signal_done();
 
 private:
+  Gtk::Box m_centBox{Gtk::ORIENTATION_VERTICAL};
+
   ColorWheelPicker *m_picker = nullptr;
   ImageButton *m_okBtn = nullptr;
 

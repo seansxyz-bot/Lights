@@ -2,18 +2,6 @@
 
 #include "utils/logger.h"
 
-#if (UBUNTU == 1)
-#define BUTTON_WIDTH 384
-#define BUTTON_MARGIN 32
-#define COLOR_PICKER_SIZE 512
-#define COLOR_BAR_SIZE 56
-#else
-#define BUTTON_WIDTH 239
-#define BUTTON_MARGIN 20
-#define COLOR_PICKER_SIZE 319
-#define COLOR_BAR_SIZE 35
-#endif
-
 #include "bluetooth/bluezagent.h"
 #include "bluetooth/btcontrol.h"
 #include "drivers/gpio/gpiohelper.h"

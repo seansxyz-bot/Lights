@@ -8,7 +8,7 @@ public:
   static constexpr int SR_SWITCH = 10;
   static constexpr int TEENSY_SWITCH = 9;
 
-  explicit PowerSwitch(const std::string &chipName = "gpiochip0");
+  explicit PowerSwitch(const std::string &chipName = "/dev/gpiochip0");
 
   bool setEnabled(bool enabled);
   std::string lastError() const;

@@ -18,9 +18,11 @@
 #if (UBUNTU == 1)
 #define LOG_FILE_MSTR "/home/dev/.lightcontroller/logs/log"
 #else
-#define LOG_FILE_MSTR "/home/lights/.lightcontroller/logs/log"
+#define LOG_FILE_MSTR "/home/lights/.config/lights/logs/log"
 #endif
 #endif
+
+#define SCREEN 1
 
 class Logger {
 public:

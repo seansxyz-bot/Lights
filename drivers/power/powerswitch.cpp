@@ -1,17 +1,16 @@
 #include "powerswitch.h"
 
-#include <chrono>
 #include <gpiod.h>
-#include <thread>
 
 namespace {
+gpiod_line_value toLineValue(int v) {
+  return v ? GPIOD_LINE_VALUE_ACTIVE : GPIOD_LINE_VALUE_INACTIVE;
+}
 
-// GPIO 9  (pin 21 / TEENSY_SWITCH): LOW = OFF, HIGH = ON
-// GPIO 10 (pin 19 / SR_SWITCH):     HIGH = OFF, LOW = ON
+// Adjust these if your hardware logic is inverted.
+int teensyValueForEnabled(bool enabled) { return enabled ? 1 : 0; }
 
-constexpr int teensyValueForEnabled(bool enabled) { return enabled ? 1 : 0; }
-constexpr int srValueForEnabled(bool enabled) { return enabled ? 0 : 1; }
-
+int srValueForEnabled(bool enabled) { return enabled ? 1 : 0; }
 } // namespace
 
 PowerSwitch::PowerSwitch(const std::string &chipName) : m_chipName(chipName) {}
@@ -21,33 +20,52 @@ std::string PowerSwitch::lastError() const { return m_lastError; }
 bool PowerSwitch::setEnabled(bool enabled) {
   m_lastError.clear();
 
-  gpiod_chip *chip = gpiod_chip_open_by_name(m_chipName.c_str());
+  gpiod_chip *chip = gpiod_chip_open(m_chipName.c_str());
   if (!chip) {
-    m_lastError = "PowerSwitch: failed to open gpio chip";
+    m_lastError = "Failed to open gpio chip";
     return false;
   }
 
-  gpiod_line *teensyLine = gpiod_chip_get_line(chip, TEENSY_SWITCH);
-  gpiod_line *srLine = gpiod_chip_get_line(chip, SR_SWITCH);
+  gpiod_request_config *reqCfg = gpiod_request_config_new();
+  gpiod_line_config *lineCfg = gpiod_line_config_new();
+  gpiod_line_settings *settings = gpiod_line_settings_new();
+  gpiod_line_request *request = nullptr;
 
-  if (!teensyLine || !srLine) {
-    m_lastError = "PowerSwitch: failed to get GPIO lines";
+  if (!reqCfg || !lineCfg || !settings) {
+    m_lastError = "Failed to allocate libgpiod objects";
+    if (settings)
+      gpiod_line_settings_free(settings);
+    if (lineCfg)
+      gpiod_line_config_free(lineCfg);
+    if (reqCfg)
+      gpiod_request_config_free(reqCfg);
     gpiod_chip_close(chip);
     return false;
   }
 
-  // Request both lines with their current target state as initial values.
-  if (gpiod_line_request_output(teensyLine, "lights-powerswitch",
-                                teensyValueForEnabled(false)) < 0) {
-    m_lastError = "PowerSwitch: failed to request TEENSY_SWITCH as output";
+  gpiod_request_config_set_consumer(reqCfg, "lights-powerswitch");
+  gpiod_line_settings_set_direction(settings, GPIOD_LINE_DIRECTION_OUTPUT);
+
+  unsigned int offsets[2] = {
+      static_cast<unsigned int>(TEENSY_SWITCH),
+      static_cast<unsigned int>(SR_SWITCH),
+  };
+
+  if (gpiod_line_config_add_line_settings(lineCfg, offsets, 2, settings) < 0) {
+    m_lastError = "Failed to configure power switch lines";
+    gpiod_line_settings_free(settings);
+    gpiod_line_config_free(lineCfg);
+    gpiod_request_config_free(reqCfg);
     gpiod_chip_close(chip);
     return false;
   }
 
-  if (gpiod_line_request_output(srLine, "lights-powerswitch",
-                                srValueForEnabled(false)) < 0) {
-    m_lastError = "PowerSwitch: failed to request SR_SWITCH as output";
-    gpiod_line_release(teensyLine);
+  request = gpiod_chip_request_lines(chip, reqCfg, lineCfg);
+  if (!request) {
+    m_lastError = "Failed to request power switch lines";
+    gpiod_line_settings_free(settings);
+    gpiod_line_config_free(lineCfg);
+    gpiod_request_config_free(reqCfg);
     gpiod_chip_close(chip);
     return false;
   }
@@ -56,24 +74,31 @@ bool PowerSwitch::setEnabled(bool enabled) {
   int rc2 = 0;
 
   if (enabled) {
-    rc1 = gpiod_line_set_value(teensyLine, teensyValueForEnabled(true));
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    rc2 = gpiod_line_set_value(srLine, srValueForEnabled(true));
+    rc1 = gpiod_line_request_set_value(
+        request, offsets[0], toLineValue(teensyValueForEnabled(true)));
+    rc2 = gpiod_line_request_set_value(request, offsets[1],
+                                       toLineValue(srValueForEnabled(true)));
   } else {
-    rc1 = gpiod_line_set_value(srLine, srValueForEnabled(false));
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    rc2 = gpiod_line_set_value(teensyLine, teensyValueForEnabled(false));
+    rc1 = gpiod_line_request_set_value(request, offsets[1],
+                                       toLineValue(srValueForEnabled(false)));
+    rc2 = gpiod_line_request_set_value(
+        request, offsets[0], toLineValue(teensyValueForEnabled(false)));
   }
 
-  gpiod_line_release(srLine);
-  gpiod_line_release(teensyLine);
-  gpiod_chip_close(chip);
-
   if (rc1 < 0 || rc2 < 0) {
-    m_lastError = "PowerSwitch: failed to set GPIO values";
+    m_lastError = "Failed to set power switch GPIO values";
+    gpiod_line_request_release(request);
+    gpiod_line_settings_free(settings);
+    gpiod_line_config_free(lineCfg);
+    gpiod_request_config_free(reqCfg);
+    gpiod_chip_close(chip);
     return false;
   }
 
-  m_signalPowerChanged.emit(enabled);
+  gpiod_line_request_release(request);
+  gpiod_line_settings_free(settings);
+  gpiod_line_config_free(lineCfg);
+  gpiod_request_config_free(reqCfg);
+  gpiod_chip_close(chip);
   return true;
 }
