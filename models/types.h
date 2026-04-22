@@ -15,6 +15,7 @@ struct RGB_Color {
 
 struct Theme {
   std::string name;
+  std::string fileName;
   int id = 0;
   std::vector<RGB_Color> colors;
 };

@@ -249,8 +249,8 @@ int writeThemeColors(std::string path, const std::vector<Theme> &themes) {
   }
 
   const char *sql = R"(
-    INSERT INTO themes (theme_id, name, color_index, r, g, b)
-    VALUES (?, ?, ?, ?, ?, ?);
+    INSERT INTO themes (theme_id, name, fileName, color_index, r, g, b)
+    VALUES (?, ?, ?, ?, ?, ?, ?);
   )";
 
   sqlite3_stmt *stmt = nullptr;
@@ -272,10 +272,11 @@ int writeThemeColors(std::string path, const std::vector<Theme> &themes) {
 
       sqlite3_bind_int(stmt, 1, theme.id);
       sqlite3_bind_text(stmt, 2, theme.name.c_str(), -1, SQLITE_TRANSIENT);
-      sqlite3_bind_int(stmt, 3, i);
-      sqlite3_bind_int(stmt, 4, c.r);
-      sqlite3_bind_int(stmt, 5, c.g);
-      sqlite3_bind_int(stmt, 6, c.b);
+      sqlite3_bind_text(stmt, 3, theme.fileName.c_str(), -1, SQLITE_TRANSIENT);
+      sqlite3_bind_int(stmt, 4, i);
+      sqlite3_bind_int(stmt, 5, c.r);
+      sqlite3_bind_int(stmt, 6, c.g);
+      sqlite3_bind_int(stmt, 7, c.b);
 
       if (sqlite3_step(stmt) != SQLITE_DONE) {
         std::cerr << "Insert failed: " << sqlite3_errmsg(db) << "\n";

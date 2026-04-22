@@ -524,8 +524,8 @@ void MainWindow::onBluetoothWorkerFinished() {
 void MainWindow::showThemesPage() {
   destroyTemporaryPage("themes");
 
-  m_themesPage =
-      Gtk::manage(new Themes(std::string(ICON_PATH), m_options.theme));
+  m_themesPage = Gtk::manage(
+      new Themes(std::string(ICON_PATH), m_themes, m_options.theme));
 
   m_themesPage->signal_theme_selected().connect([this](int index) {
     m_options.theme = index;

@@ -5,6 +5,24 @@
 #include <sigc++/sigc++.h>
 #include <string>
 
+#if (SCREEN == 1)
+#define DELTAGROUP_TOP_MARGIN 20
+#define DELTAGROUP_MAIN_SPACING 20
+#define DELTAGROUP_LEFT_SPACING 12
+#define DELTAGROUP_ROW_SPACING 16
+#define DELTAGROUP_OK_TOP_MARGIN 8
+#define DELTAGROUP_OK_BOTTOM_MARGIN 12
+#define DELTAGROUP_GROUP_BTN_SIZE 190
+#else
+#define DELTAGROUP_TOP_MARGIN 8
+#define DELTAGROUP_MAIN_SPACING 10
+#define DELTAGROUP_LEFT_SPACING 8
+#define DELTAGROUP_ROW_SPACING 10
+#define DELTAGROUP_OK_TOP_MARGIN 4
+#define DELTAGROUP_OK_BOTTOM_MARGIN 6
+#define DELTAGROUP_GROUP_BTN_SIZE 150
+#endif
+
 class ColorWheelPicker;
 class ImageButton;
 
@@ -31,6 +49,7 @@ private:
   int m_groupSelection = 0;
   std::array<GroupColor, 3> m_groupColors{};
 
+  Gtk::Box m_centBox{Gtk::ORIENTATION_VERTICAL};
   Gtk::Box m_mainRow{Gtk::ORIENTATION_HORIZONTAL};
   Gtk::Box m_leftPane{Gtk::ORIENTATION_VERTICAL};
 

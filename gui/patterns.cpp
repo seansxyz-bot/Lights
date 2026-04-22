@@ -7,55 +7,64 @@ Patterns::Patterns(const std::string &iconPath, int currentPattern)
     : Gtk::Box(Gtk::ORIENTATION_VERTICAL) {
   LOG_INFO() << "Patterns ctor";
 
-  auto boxA = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
-  auto boxB = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
-  auto boxC = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
+  set_halign(Gtk::ALIGN_FILL);
+  set_valign(Gtk::ALIGN_START);
+  set_margin_top(PATTERNS_TOP_MARGIN);
 
-  boxA->set_spacing(10);
-  boxB->set_spacing(10);
-  boxC->set_spacing(10);
+  m_centBox.set_halign(Gtk::ALIGN_CENTER);
+  m_centBox.set_valign(Gtk::ALIGN_START);
+  m_centBox.set_spacing(PATTERNS_OUTER_SPACING);
 
-  boxA->set_halign(Gtk::ALIGN_CENTER);
-  boxB->set_halign(Gtk::ALIGN_CENTER);
-  boxC->set_halign(Gtk::ALIGN_CENTER);
+  m_rowA.set_halign(Gtk::ALIGN_CENTER);
+  m_rowB.set_halign(Gtk::ALIGN_CENTER);
+  m_rowC.set_halign(Gtk::ALIGN_CENTER);
 
-  auto combination =
-      Gtk::manage(new ImageButton(iconPath + "/combination.png", 160));
-  auto chase = Gtk::manage(new ImageButton(iconPath + "/chase.png", 160));
-  auto comet = Gtk::manage(new ImageButton(iconPath + "/comet.png", 160));
-  auto waves = Gtk::manage(new ImageButton(iconPath + "/waves.png", 160));
-  auto sloglo = Gtk::manage(new ImageButton(iconPath + "/sloglo.png", 160));
-  auto twinkle = Gtk::manage(new ImageButton(iconPath + "/twinkle.png", 160));
-  auto fade = Gtk::manage(new ImageButton(iconPath + "/fade.png", 160));
-  auto alternate =
-      Gtk::manage(new ImageButton(iconPath + "/alternate.png", 160));
-  auto off = Gtk::manage(new ImageButton(iconPath + "/off.png", 160));
-  auto ok = Gtk::manage(new ImageButton(iconPath + "/ok.png", 96));
+  m_rowA.set_spacing(PATTERNS_COL_SPACING);
+  m_rowB.set_spacing(PATTERNS_COL_SPACING);
+  m_rowC.set_spacing(PATTERNS_COL_SPACING);
 
-  boxA->pack_start(*combination, Gtk::PACK_SHRINK);
-  boxA->pack_start(*chase, Gtk::PACK_SHRINK);
-  boxA->pack_start(*comet, Gtk::PACK_SHRINK);
-  boxA->pack_start(*waves, Gtk::PACK_SHRINK);
+  auto combination = Gtk::manage(
+      new ImageButton(iconPath + "/combination.png", PATTERNS_BUTTON_SIZE));
+  auto chase = Gtk::manage(
+      new ImageButton(iconPath + "/chase.png", PATTERNS_BUTTON_SIZE));
+  auto comet = Gtk::manage(
+      new ImageButton(iconPath + "/comet.png", PATTERNS_BUTTON_SIZE));
+  auto waves = Gtk::manage(
+      new ImageButton(iconPath + "/waves.png", PATTERNS_BUTTON_SIZE));
+  auto sloglo = Gtk::manage(
+      new ImageButton(iconPath + "/sloglo.png", PATTERNS_BUTTON_SIZE));
+  auto twinkle = Gtk::manage(
+      new ImageButton(iconPath + "/twinkle.png", PATTERNS_BUTTON_SIZE));
+  auto fade = Gtk::manage(
+      new ImageButton(iconPath + "/fade.png", PATTERNS_BUTTON_SIZE));
+  auto alternate = Gtk::manage(
+      new ImageButton(iconPath + "/alternate.png", PATTERNS_BUTTON_SIZE));
+  auto off =
+      Gtk::manage(new ImageButton(iconPath + "/off.png", PATTERNS_BUTTON_SIZE));
+  auto ok =
+      Gtk::manage(new ImageButton(iconPath + "/ok.png", PATTERNS_OK_SIZE));
 
-  boxB->pack_start(*sloglo, Gtk::PACK_SHRINK);
-  boxB->pack_start(*twinkle, Gtk::PACK_SHRINK);
-  boxB->pack_start(*fade, Gtk::PACK_SHRINK);
-  boxB->pack_start(*alternate, Gtk::PACK_SHRINK);
+  m_rowA.pack_start(*combination, Gtk::PACK_SHRINK);
+  m_rowA.pack_start(*chase, Gtk::PACK_SHRINK);
+  m_rowA.pack_start(*comet, Gtk::PACK_SHRINK);
+  m_rowA.pack_start(*waves, Gtk::PACK_SHRINK);
 
-  boxC->pack_start(*off, Gtk::PACK_SHRINK);
+  m_rowB.pack_start(*sloglo, Gtk::PACK_SHRINK);
+  m_rowB.pack_start(*twinkle, Gtk::PACK_SHRINK);
+  m_rowB.pack_start(*fade, Gtk::PACK_SHRINK);
+  m_rowB.pack_start(*alternate, Gtk::PACK_SHRINK);
+
+  m_rowC.pack_start(*off, Gtk::PACK_SHRINK);
 
   ok->set_halign(Gtk::ALIGN_CENTER);
-  ok->set_valign(Gtk::ALIGN_END);
-  ok->set_margin_bottom(20);
+  ok->set_margin_bottom(PATTERNS_OK_BOTTOM_MARGIN);
 
-  set_spacing(20);
-  set_halign(Gtk::ALIGN_CENTER);
-  set_valign(Gtk::ALIGN_CENTER);
+  m_centBox.pack_start(m_rowA, Gtk::PACK_SHRINK);
+  m_centBox.pack_start(m_rowB, Gtk::PACK_SHRINK);
+  m_centBox.pack_start(m_rowC, Gtk::PACK_SHRINK);
+  m_centBox.pack_start(*ok, Gtk::PACK_SHRINK);
 
-  pack_start(*boxA, Gtk::PACK_SHRINK);
-  pack_start(*boxB, Gtk::PACK_SHRINK);
-  pack_start(*boxC, Gtk::PACK_SHRINK);
-  pack_end(*ok, Gtk::PACK_SHRINK);
+  pack_start(m_centBox, Gtk::PACK_SHRINK);
 
   m_buttons = {off,    combination, chase, comet,    waves,
                sloglo, twinkle,     fade,  alternate};

@@ -170,7 +170,7 @@ std::vector<Theme> readThemeColors(const std::string &path) {
   }
 
   const char *sql = R"(
-    SELECT theme_id, name, color_index, r, g, b
+    SELECT theme_id, name, fileName, color_index, r, g, b
     FROM themes
     ORDER BY theme_id, color_index;
   )";
@@ -196,6 +196,10 @@ std::vector<Theme> readThemeColors(const std::string &path) {
       const unsigned char *nameText = sqlite3_column_text(stmt, 1);
       t.name = nameText ? reinterpret_cast<const char *>(nameText) : "";
 
+      const unsigned char *fileNameText = sqlite3_column_text(stmt, 2);
+      t.fileName =
+          fileNameText ? reinterpret_cast<const char *>(fileNameText) : "";
+
       out.push_back(t);
       currentTheme = &out.back();
       currentThemeId = themeId;
@@ -203,9 +207,9 @@ std::vector<Theme> readThemeColors(const std::string &path) {
 
     if (currentTheme) {
       RGB_Color c;
-      c.r = static_cast<uint8_t>(sqlite3_column_int(stmt, 3));
-      c.g = static_cast<uint8_t>(sqlite3_column_int(stmt, 4));
-      c.b = static_cast<uint8_t>(sqlite3_column_int(stmt, 5));
+      c.r = static_cast<uint8_t>(sqlite3_column_int(stmt, 4));
+      c.g = static_cast<uint8_t>(sqlite3_column_int(stmt, 5));
+      c.b = static_cast<uint8_t>(sqlite3_column_int(stmt, 6));
       currentTheme->colors.push_back(c);
     }
   }

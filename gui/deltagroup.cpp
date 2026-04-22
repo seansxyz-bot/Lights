@@ -11,15 +11,22 @@ DeltaGroup::DeltaGroup(const std::string &iconPath, int startGroup,
       m_groupColors(groupColors) {
   LOG_INFO() << "DeltaGroup ctor";
 
-  set_halign(Gtk::ALIGN_CENTER);
-  set_valign(Gtk::ALIGN_FILL);
-  set_spacing(12);
+  set_halign(Gtk::ALIGN_FILL);
+  set_valign(Gtk::ALIGN_START);
+  set_margin_top(DELTAGROUP_TOP_MARGIN);
 
-  m_leftPane.set_spacing(10);
+  m_centBox.set_halign(Gtk::ALIGN_CENTER);
+  m_centBox.set_valign(Gtk::ALIGN_START);
+  m_centBox.set_spacing(DELTAGROUP_ROW_SPACING);
 
-  m_capBtn = Gtk::manage(new ImageButton(iconPath + "/cap.png", 190));
-  m_frontBtn = Gtk::manage(new ImageButton(iconPath + "/front.png", 190));
-  m_backBtn = Gtk::manage(new ImageButton(iconPath + "/back.png", 190));
+  m_leftPane.set_spacing(DELTAGROUP_LEFT_SPACING);
+
+  m_capBtn = Gtk::manage(
+      new ImageButton(iconPath + "/cap.png", DELTAGROUP_GROUP_BTN_SIZE));
+  m_frontBtn = Gtk::manage(
+      new ImageButton(iconPath + "/front.png", DELTAGROUP_GROUP_BTN_SIZE));
+  m_backBtn = Gtk::manage(
+      new ImageButton(iconPath + "/back.png", DELTAGROUP_GROUP_BTN_SIZE));
 
   const auto &c = m_groupColors[m_groupSelection];
   m_picker = Gtk::manage(new ColorWheelPicker(iconPath, "Change Cap LEDs", c.r,
@@ -27,7 +34,7 @@ DeltaGroup::DeltaGroup(const std::string &iconPath, int startGroup,
                                               keypadPixelSize));
 
   m_picker->set_halign(Gtk::ALIGN_CENTER);
-  m_picker->set_valign(Gtk::ALIGN_FILL);
+  m_picker->set_valign(Gtk::ALIGN_START);
 
   m_capBtn->signal_clicked().connect([this]() { set_active_group(0); });
   m_frontBtn->signal_clicked().connect([this]() { set_active_group(1); });
@@ -40,8 +47,8 @@ DeltaGroup::DeltaGroup(const std::string &iconPath, int startGroup,
 
   m_okBtn = Gtk::manage(new ImageButton(iconPath + "/ok.png", keypadPixelSize));
   m_okBtn->set_halign(Gtk::ALIGN_CENTER);
-  m_okBtn->set_margin_top(8);
-  m_okBtn->set_margin_bottom(12);
+  m_okBtn->set_margin_top(DELTAGROUP_OK_TOP_MARGIN);
+  m_okBtn->set_margin_bottom(DELTAGROUP_OK_BOTTOM_MARGIN);
   m_okBtn->signal_clicked().connect([this]() {
     if (m_picker)
       m_picker->commit_pending();
@@ -52,12 +59,16 @@ DeltaGroup::DeltaGroup(const std::string &iconPath, int startGroup,
   m_leftPane.pack_start(*m_frontBtn, Gtk::PACK_SHRINK);
   m_leftPane.pack_start(*m_backBtn, Gtk::PACK_SHRINK);
 
-  m_mainRow.set_spacing(14);
+  m_mainRow.set_halign(Gtk::ALIGN_CENTER);
+  m_mainRow.set_valign(Gtk::ALIGN_START);
+  m_mainRow.set_spacing(DELTAGROUP_MAIN_SPACING);
   m_mainRow.pack_start(m_leftPane, Gtk::PACK_SHRINK);
-  m_mainRow.pack_start(*m_picker, Gtk::PACK_EXPAND_WIDGET);
+  m_mainRow.pack_start(*m_picker, Gtk::PACK_SHRINK);
 
-  pack_start(m_mainRow, Gtk::PACK_EXPAND_WIDGET);
-  pack_start(*m_okBtn, Gtk::PACK_SHRINK);
+  m_centBox.pack_start(m_mainRow, Gtk::PACK_SHRINK);
+  m_centBox.pack_start(*m_okBtn, Gtk::PACK_SHRINK);
+
+  pack_start(m_centBox, Gtk::PACK_SHRINK);
 
   set_active_group(m_groupSelection);
   show_all_children();
