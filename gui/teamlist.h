@@ -8,6 +8,28 @@
 #include "../storage/read.h"
 #include "../storage/write.h"
 
+#if (SCREEN == 1)
+#define TEAMLIST_TOP_MARGIN 20
+#define TEAMLIST_OUTER_SPACING 20
+#define TEAMLIST_MAIN_SPACING 12
+#define TEAMLIST_ROWS_SPACING 10
+#define TEAMLIST_BOTTOM_SPACING 20
+#define TEAMLIST_SCROLL_MIN_HEIGHT 500
+#define TEAMLIST_SCROLL_MIN_WIDTH 900
+#define TEAMLIST_CANCEL_SIZE 96
+#define TEAMLIST_EDIT_SIZE 96
+#else
+#define TEAMLIST_TOP_MARGIN 8
+#define TEAMLIST_OUTER_SPACING 10
+#define TEAMLIST_MAIN_SPACING 8
+#define TEAMLIST_ROWS_SPACING 6
+#define TEAMLIST_BOTTOM_SPACING 10
+#define TEAMLIST_SCROLL_MIN_HEIGHT 360
+#define TEAMLIST_SCROLL_MIN_WIDTH 700
+#define TEAMLIST_CANCEL_SIZE 72
+#define TEAMLIST_EDIT_SIZE 72
+#endif
+
 class ImageButton;
 
 class TeamList : public Gtk::Box {
@@ -29,6 +51,7 @@ private:
   std::string m_teamsDbPath;
   std::vector<TeamRecord> m_teams;
 
+  Gtk::Box m_centBox{Gtk::ORIENTATION_VERTICAL};
   Gtk::ScrolledWindow m_scroll;
   Gtk::Box m_mainBox{Gtk::ORIENTATION_VERTICAL};
   Gtk::Box m_rowsBox{Gtk::ORIENTATION_VERTICAL};

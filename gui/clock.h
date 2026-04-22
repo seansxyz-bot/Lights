@@ -6,6 +6,25 @@
 #include <gtkmm.h>
 #include <mutex>
 #include <string>
+#if (SCREEN == 1)
+#define CLOCK_DATE_FONT_PX 56
+#define CLOCK_ENV_FONT_PX 56
+#define CLOCK_TIME_FONT_PX 450
+#define CLOCK_TIME_NUDGE_Y -40
+#define CLOCK_MIN_Y -425
+#define CLOCK_MAX_Y 8
+#define CLOCK_MIN_X -36
+#define CLOCK_MAX_X 36
+#else
+#define CLOCK_DATE_FONT_PX 36
+#define CLOCK_ENV_FONT_PX 36
+#define CLOCK_TIME_FONT_PX 280
+#define CLOCK_TIME_NUDGE_Y -24
+#define CLOCK_MIN_Y -260
+#define CLOCK_MAX_Y 6
+#define CLOCK_MIN_X -24
+#define CLOCK_MAX_X 24
+#endif
 
 class ClockScreen : public Gtk::EventBox {
 public:
@@ -73,10 +92,10 @@ private:
   bool m_moveRight{true};
 
   // ---------- Manual font sizes ----------
-  int m_dateFontPx{56};
-  int m_envFontPx{56};
-  int m_clockFontPx{450};
-  int m_clockNudgeY{-40};
+  int m_dateFontPx{CLOCK_DATE_FONT_PX};
+  int m_envFontPx{CLOCK_ENV_FONT_PX};
+  int m_clockFontPx{CLOCK_TIME_FONT_PX};
+  int m_clockNudgeY{CLOCK_TIME_NUDGE_Y};
 
   // ---------- Signals ----------
   sigc::signal<void> m_signalDismissRequested;

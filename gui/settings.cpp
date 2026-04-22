@@ -9,56 +9,59 @@ Settings::Settings(const std::string &iconPath, bool autoSensorOn,
       m_lightsOn(lightsOn), m_bluetoothOn(bluetoothOn) {
   LOG_INFO() << "Settings ctor";
 
-  auto boxA = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
-  auto boxB = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
-  auto boxC = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
+  set_halign(Gtk::ALIGN_FILL);
+  set_valign(Gtk::ALIGN_START);
+  set_margin_top(SETTINGS_TOP_MARGIN);
 
-  boxA->set_spacing(10);
-  boxB->set_spacing(10);
-  boxC->set_spacing(10);
+  m_centBox.set_halign(Gtk::ALIGN_CENTER);
+  m_centBox.set_valign(Gtk::ALIGN_START);
+  m_centBox.set_spacing(SETTINGS_OUTER_SPACING);
 
-  boxA->set_halign(Gtk::ALIGN_CENTER);
-  boxB->set_halign(Gtk::ALIGN_CENTER);
-  boxC->set_halign(Gtk::ALIGN_CENTER);
+  m_rowA.set_halign(Gtk::ALIGN_CENTER);
+  m_rowB.set_halign(Gtk::ALIGN_CENTER);
+  m_rowC.set_halign(Gtk::ALIGN_CENTER);
 
-  m_autoSensorBtn = Gtk::manage(
-      new ImageButton(iconPath, "/auto_off", "/auto_on", m_autoSensorOn, 256));
+  m_rowA.set_spacing(SETTINGS_ROW_SPACING);
+  m_rowB.set_spacing(SETTINGS_ROW_SPACING);
+  m_rowC.set_spacing(SETTINGS_ROW_SPACING);
 
-  m_lightSwitchBtn = Gtk::manage(
-      new ImageButton(iconPath, "/lights_off", "/lights_on", m_lightsOn, 256));
+  m_autoSensorBtn = Gtk::manage(new ImageButton(
+      iconPath, "/auto_off", "/auto_on", m_autoSensorOn, SETTINGS_TOGGLE_SIZE));
 
-  m_bluetoothBtn = Gtk::manage(new ImageButton(
-      iconPath, "/bluetooth_off", "/bluetooth_on", m_bluetoothOn, 256));
+  m_lightSwitchBtn = Gtk::manage(new ImageButton(
+      iconPath, "/lights_off", "/lights_on", m_lightsOn, SETTINGS_TOGGLE_SIZE));
 
-  m_editThemeBtn = Gtk::manage(new ImageButton(iconPath + "/dt.png", 196));
+  m_bluetoothBtn =
+      Gtk::manage(new ImageButton(iconPath, "/bluetooth_off", "/bluetooth_on",
+                                  m_bluetoothOn, SETTINGS_TOGGLE_SIZE));
 
-  m_editTeamsBtn =
-      Gtk::manage(new ImageButton(iconPath + "/editteams.png", 196));
-
-  m_restartBtn = Gtk::manage(new ImageButton(iconPath + "/restart.png", 160));
-  m_okBtn = Gtk::manage(new ImageButton(iconPath + "/ok.png", 96));
+  m_editThemeBtn =
+      Gtk::manage(new ImageButton(iconPath + "/dt.png", SETTINGS_EDIT_SIZE));
+  m_editTeamsBtn = Gtk::manage(
+      new ImageButton(iconPath + "/editteams.png", SETTINGS_EDIT_SIZE));
+  m_restartBtn = Gtk::manage(
+      new ImageButton(iconPath + "/restart.png", SETTINGS_RESTART_SIZE));
+  m_okBtn =
+      Gtk::manage(new ImageButton(iconPath + "/ok.png", SETTINGS_OK_SIZE));
 
   m_okBtn->set_halign(Gtk::ALIGN_CENTER);
-  m_okBtn->set_valign(Gtk::ALIGN_END);
-  m_okBtn->set_margin_bottom(20);
+  m_okBtn->set_margin_bottom(SETTINGS_OK_BOTTOM_MARGIN);
 
-  boxA->pack_start(*m_autoSensorBtn, Gtk::PACK_SHRINK);
-  boxA->pack_start(*m_lightSwitchBtn, Gtk::PACK_SHRINK);
-  boxA->pack_start(*m_bluetoothBtn, Gtk::PACK_SHRINK);
+  m_rowA.pack_start(*m_autoSensorBtn, Gtk::PACK_SHRINK);
+  m_rowA.pack_start(*m_lightSwitchBtn, Gtk::PACK_SHRINK);
+  m_rowA.pack_start(*m_bluetoothBtn, Gtk::PACK_SHRINK);
 
-  boxB->pack_start(*m_editThemeBtn, Gtk::PACK_SHRINK);
-  boxB->pack_start(*m_editTeamsBtn, Gtk::PACK_SHRINK);
+  m_rowB.pack_start(*m_editThemeBtn, Gtk::PACK_SHRINK);
+  m_rowB.pack_start(*m_editTeamsBtn, Gtk::PACK_SHRINK);
 
-  boxC->pack_start(*m_restartBtn, Gtk::PACK_SHRINK);
+  m_rowC.pack_start(*m_restartBtn, Gtk::PACK_SHRINK);
 
-  set_spacing(20);
-  set_halign(Gtk::ALIGN_CENTER);
-  set_valign(Gtk::ALIGN_CENTER);
+  m_centBox.pack_start(m_rowA, Gtk::PACK_SHRINK);
+  m_centBox.pack_start(m_rowB, Gtk::PACK_SHRINK);
+  m_centBox.pack_start(m_rowC, Gtk::PACK_SHRINK);
+  m_centBox.pack_start(*m_okBtn, Gtk::PACK_SHRINK);
 
-  pack_start(*boxA, Gtk::PACK_SHRINK);
-  pack_start(*boxB, Gtk::PACK_SHRINK);
-  pack_start(*boxC, Gtk::PACK_SHRINK);
-  pack_end(*m_okBtn, Gtk::PACK_SHRINK);
+  pack_start(m_centBox, Gtk::PACK_SHRINK);
 
   m_autoSensorBtn->signal_clicked().connect([this]() {
     m_autoSensorOn = !m_autoSensorOn;

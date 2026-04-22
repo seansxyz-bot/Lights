@@ -41,12 +41,13 @@ EditTeam::EditTeam(const std::string &iconPath, const std::string &teamsDbPath,
       m_teamsDbPath(teamsDbPath), m_team(team) {
   LOG_INFO() << "EditTeam ctor for team " << team.name;
 
-  set_spacing(20);
-  set_halign(Gtk::ALIGN_CENTER);
-  set_valign(Gtk::ALIGN_CENTER);
+  set_spacing(EDITTEAM_OUTER_SPACING);
+  set_halign(Gtk::ALIGN_FILL);
+  set_valign(Gtk::ALIGN_START);
+  set_margin_top(EDITTEAM_TOP_MARGIN);
 
-  m_grid.set_row_spacing(10);
-  m_grid.set_column_spacing(12);
+  m_grid.set_row_spacing(EDITTEAM_GRID_ROW_SPACING);
+  m_grid.set_column_spacing(EDITTEAM_GRID_COL_SPACING);
   m_grid.set_halign(Gtk::ALIGN_CENTER);
 
   m_nameEntry.set_text(m_team.name);
@@ -82,11 +83,11 @@ EditTeam::EditTeam(const std::string &iconPath, const std::string &teamsDbPath,
     }
   }
 
-  m_bodyBox.set_spacing(24);
+  m_bodyBox.set_spacing(EDITTEAM_BODY_SPACING);
   m_bodyBox.set_halign(Gtk::ALIGN_CENTER);
   m_bodyBox.set_valign(Gtk::ALIGN_CENTER);
 
-  m_formBox.set_spacing(12);
+  m_formBox.set_spacing(EDITTEAM_FORM_SPACING);
   m_formBox.set_halign(Gtk::ALIGN_CENTER);
 
   int row = 0;
@@ -143,7 +144,8 @@ EditTeam::EditTeam(const std::string &iconPath, const std::string &teamsDbPath,
   m_logoStatusLabel.set_halign(Gtk::ALIGN_CENTER);
   m_logoStatusLabel.set_valign(Gtk::ALIGN_CENTER);
 
-  m_logoPreview.set_size_request(180, 180);
+  m_logoPreview.set_size_request(EDITTEAM_LOGO_PREVIEW_SIZE,
+                                 EDITTEAM_LOGO_PREVIEW_SIZE);
   m_logoPreview.set_halign(Gtk::ALIGN_CENTER);
   m_logoPreview.set_valign(Gtk::ALIGN_CENTER);
 
@@ -156,7 +158,7 @@ EditTeam::EditTeam(const std::string &iconPath, const std::string &teamsDbPath,
 
   m_logoDropArea.set_visible_window(true);
   m_logoDropArea.set_above_child(false);
-  m_logoDropArea.set_size_request(220, 220);
+  m_logoDropArea.set_size_request(EDITTEAM_LOGO_DROP_SIZE);
   m_logoDropArea.add_events(Gdk::BUTTON_PRESS_MASK);
   m_logoDropArea.add(m_logoAreaBox);
   m_logoDropArea.signal_button_press_event().connect(
@@ -165,7 +167,8 @@ EditTeam::EditTeam(const std::string &iconPath, const std::string &teamsDbPath,
   m_logoPreviewFrame.set_shadow_type(Gtk::SHADOW_IN);
   m_logoPreviewFrame.add(m_logoDropArea);
 
-  m_deleteLogoBtn = Gtk::manage(new ImageButton(m_iconPath + "/trash.png", 64));
+  m_deleteLogoBtn = Gtk::manage(
+      new ImageButton(m_iconPath + "/trash.png", EDITTEAM_DELETE_LOGO_SIZE));
 
   m_logoActionBox.set_spacing(8);
   m_logoActionBox.set_halign(Gtk::ALIGN_CENTER);
@@ -186,10 +189,12 @@ EditTeam::EditTeam(const std::string &iconPath, const std::string &teamsDbPath,
   m_bodyBox.pack_start(m_formBox, Gtk::PACK_SHRINK);
   m_bodyBox.pack_start(m_logoFrame, Gtk::PACK_SHRINK);
 
-  m_okBtn = Gtk::manage(new ImageButton(m_iconPath + "/ok.png", 96));
-  m_cancelBtn = Gtk::manage(new ImageButton(m_iconPath + "/cancel.png", 96));
+  m_okBtn =
+      Gtk::manage(new ImageButton(m_iconPath + "/ok.png", EDITTEAM_OK_SIZE));
+  m_cancelBtn = Gtk::manage(
+      new ImageButton(m_iconPath + "/cancel.png", EDITTEAM_CANCEL_SIZE));
 
-  m_buttonBox.set_spacing(20);
+  m_buttonBox.set_spacing(EDITTEAM_BUTTON_SPACING);
   m_buttonBox.set_halign(Gtk::ALIGN_CENTER);
   m_buttonBox.pack_start(*m_okBtn, Gtk::PACK_SHRINK);
   m_buttonBox.pack_start(*m_cancelBtn, Gtk::PACK_SHRINK);

@@ -259,8 +259,8 @@ void ClockScreen::applyColors() {
 
 bool ClockScreen::shiftVertical() {
   static constexpr int STEP_PX = 1;
-  static constexpr int MIN_Y = -425;
-  static constexpr int MAX_Y = 8;
+  static constexpr int MIN_Y = CLOCK_MIN_Y;
+  static constexpr int MAX_Y = CLOCK_MAX_Y;
 
   if (m_moveDown)
     m_offsetY += STEP_PX;
@@ -281,8 +281,8 @@ bool ClockScreen::shiftVertical() {
 
 bool ClockScreen::shiftHorizontal() {
   static constexpr int STEP_PX = 1;
-  static constexpr int MIN_X = -36;
-  static constexpr int MAX_X = 36;
+  static constexpr int MIN_X = CLOCK_MIN_X;
+  static constexpr int MAX_X = CLOCK_MAX_X;
 
   if (m_moveRight)
     m_offsetX += STEP_PX;

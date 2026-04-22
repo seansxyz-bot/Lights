@@ -4,10 +4,17 @@
 #include <functional>
 #include <gtkmm.h>
 #include <string>
+
 #if (SCREEN == 1)
 #define KEY_PAD_PIXEL_SIZE 96
+#define KEY_PAD_SPACING 10
+#define KEY_PAD_DISPLAY_FONT 36
+#define KEY_PAD_BOTTOM_MARGIN 6
 #else
 #define KEY_PAD_PIXEL_SIZE 72
+#define KEY_PAD_SPACING 8
+#define KEY_PAD_DISPLAY_FONT 28
+#define KEY_PAD_BOTTOM_MARGIN 4
 #endif
 
 class KeyPad : public Gtk::Box {
@@ -17,16 +24,16 @@ public:
       : Gtk::Box(Gtk::ORIENTATION_VERTICAL), m_path(std::move(PATH)),
         m_pixel_size(pixel_size), m_maxValue(max_value) {
 
-    set_spacing(10);
+    set_spacing(KEY_PAD_SPACING);
 
     m_display.set_halign(Gtk::ALIGN_CENTER);
     m_display.set_valign(Gtk::ALIGN_CENTER);
-    m_display.set_margin_bottom(6);
+    m_display.set_margin_bottom(KEY_PAD_BOTTOM_MARGIN);
 
     Pango::FontDescription fd;
     fd.set_family("Sans");
     fd.set_weight(Pango::WEIGHT_BOLD);
-    fd.set_size(36 * PANGO_SCALE);
+    fd.set_size(KEY_PAD_DISPLAY_FONT * PANGO_SCALE);
     m_display.override_font(fd);
 
     pack_start(m_display, Gtk::PACK_SHRINK);
@@ -38,15 +45,13 @@ public:
     add_digit_row({7, 8, 9});
 
     auto rowBottom = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
-    rowBottom->set_spacing(10);
+    rowBottom->set_spacing(KEY_PAD_SPACING);
     rowBottom->set_halign(Gtk::ALIGN_CENTER);
 
     rowBottom->pack_start(
         *make_action_button("bs", [this]() { on_backspace(); }),
         Gtk::PACK_SHRINK);
-
     rowBottom->pack_start(*make_digit_button(0), Gtk::PACK_SHRINK);
-
     rowBottom->pack_start(*make_action_button("ok", [this]() { on_ok(); }),
                           Gtk::PACK_SHRINK);
 
@@ -58,7 +63,6 @@ public:
   }
 
   sigc::signal<void, int> &signal_ok_pressed() { return m_signal_ok_pressed; }
-
   int value() const { return m_value; }
 
   void set_max_value(int max_value) {
@@ -86,7 +90,7 @@ private:
   static constexpr size_t MAX_DIGITS = 3;
 
   std::string m_path;
-  int m_pixel_size = 96;
+  int m_pixel_size = KEY_PAD_PIXEL_SIZE;
   int m_maxValue = 255;
 
   Gtk::Label m_display;
@@ -113,88 +117,39 @@ private:
 
   void apply_buffer_as_value() {
     if (m_buffer.empty()) {
-      m_buffer = "0";
       m_value = 0;
-      return;
+    } else {
+      try {
+        m_value = clamp_to_max(std::stoi(m_buffer));
+      } catch (...) {
+        m_value = 0;
+      }
     }
-
-    int v = 0;
-    try {
-      v = std::stoi(m_buffer);
-    } catch (...) {
-      v = 0;
-    }
-
-    m_value = clamp_to_max(v);
     m_buffer = std::to_string(m_value);
-  }
-
-  int preview_append_digit(int digit) const {
-    std::string tmp = m_buffer;
-
-    if (tmp == "0")
-      tmp.clear();
-    if (tmp.size() >= MAX_DIGITS)
-      return 9999;
-
-    tmp.push_back(static_cast<char>('0' + digit));
-
-    int v = 0;
-    try {
-      v = std::stoi(tmp);
-    } catch (...) {
-      v = 0;
-    }
-
-    return v;
-  }
-
-  void on_digit_pressed(int digit) {
-    if (m_onDigit)
-      m_onDigit(digit);
-
-    if (m_buffer.size() >= MAX_DIGITS)
-      return;
-
-    const int candidate = preview_append_digit(digit);
-    if (candidate > m_maxValue)
-      return;
-
-    if (m_buffer == "0")
-      m_buffer.clear();
-
-    m_buffer.push_back(static_cast<char>('0' + digit));
-
-    apply_buffer_as_value();
     update_display();
   }
 
-  void on_backspace() {
-    if (m_onBackspace)
-      m_onBackspace();
+  ImageButton *make_digit_button(int digit) {
+    auto pixbuf = Gdk::Pixbuf::create_from_file(m_path + "/" +
+                                                std::to_string(digit) + ".png");
 
-    if (!m_buffer.empty())
-      m_buffer.pop_back();
-    if (m_buffer.empty())
-      m_buffer = "0";
-
-    apply_buffer_as_value();
-    update_display();
+    auto *btn = Gtk::manage(new ImageButton(pixbuf, m_pixel_size));
+    btn->signal_clicked().connect([this, digit]() { on_digit(digit); });
+    return btn;
   }
 
-  void on_ok() {
-    apply_buffer_as_value();
-    update_display();
+  ImageButton *make_action_button(const std::string &name,
+                                  std::function<void()> fn) {
+    auto pixbuf = Gdk::Pixbuf::create_from_file(m_path + "/" + name + ".png");
 
-    m_signal_ok_pressed.emit(m_value);
-
-    if (m_onOk)
-      m_onOk(m_value);
+    auto *btn = Gtk::manage(new ImageButton(pixbuf, m_pixel_size));
+    btn->signal_clicked().connect(std::move(fn));
+    return btn;
   }
 
   void add_digit_row(std::initializer_list<int> digits) {
     auto row = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL));
-    row->set_spacing(10);
+    row->set_spacing(KEY_PAD_SPACING);
     row->set_halign(Gtk::ALIGN_CENTER);
 
     for (int d : digits)
@@ -203,26 +158,36 @@ private:
     pack_start(*row, Gtk::PACK_SHRINK);
   }
 
-  ImageButton *make_digit_button(int digit) {
-    return make_button(std::to_string(digit),
-                       [this, digit]() { on_digit_pressed(digit); });
+  void on_digit(int digit) {
+    if (m_onDigit)
+      m_onDigit(digit);
+
+    if (m_buffer == "0")
+      m_buffer.clear();
+
+    if (m_buffer.size() >= MAX_DIGITS)
+      return;
+
+    m_buffer.push_back(static_cast<char>('0' + digit));
+    apply_buffer_as_value();
   }
 
-  ImageButton *make_action_button(const std::string &name_no_ext,
-                                  std::function<void()> on_click) {
-    return make_button(name_no_ext, std::move(on_click));
+  void on_backspace() {
+    if (m_onBackspace)
+      m_onBackspace();
+
+    if (!m_buffer.empty())
+      m_buffer.pop_back();
+
+    apply_buffer_as_value();
   }
 
-  ImageButton *make_button(const std::string &name_no_ext,
-                           std::function<void()> on_click) {
-    const std::string path = m_path + "/" + name_no_ext + ".png";
-    auto btn = Gtk::manage(new ImageButton(path, m_pixel_size));
+  void on_ok() {
+    apply_buffer_as_value();
 
-    if (on_click) {
-      btn->signal_clicked().connect(
-          [cb = std::move(on_click)]() mutable { cb(); });
-    }
+    if (m_onOk)
+      m_onOk(m_value);
 
-    return btn;
+    m_signal_ok_pressed.emit(m_value);
   }
 };

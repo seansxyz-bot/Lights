@@ -6,6 +6,24 @@
 #include <string>
 #include <tuple>
 
+#if (SCREEN == 1)
+#define CALANDAR_SPACING 6
+#define CALANDAR_HEADER_SPACING 8
+#define CALANDAR_HEADER_FONT_PX 32
+#define CALANDAR_HEADER_BTN_SIZE 32
+#define CALANDAR_CELL_SIZE 44
+#define CALANDAR_CELL_RADIUS 19
+#define CALANDAR_GRID_SPACING 4
+#else
+#define CALANDAR_SPACING 4
+#define CALANDAR_HEADER_SPACING 6
+#define CALANDAR_HEADER_FONT_PX 22
+#define CALANDAR_HEADER_BTN_SIZE 26
+#define CALANDAR_CELL_SIZE 34
+#define CALANDAR_CELL_RADIUS 15
+#define CALANDAR_GRID_SPACING 3
+#endif
+
 class Calandar : public Gtk::Box {
 public:
   std::tuple<int, int, int> getEasterDate(int year) {
@@ -22,19 +40,15 @@ public:
     int l = (32 + 2 * e + 2 * i - h - k) % 7;
     int m = (a + 11 * h + 22 * l) / 451;
 
-    int month = (h + l - 7 * m + 114) / 31; // 3 = March, 4 = April
+    int month = (h + l - 7 * m + 114) / 31;
     int day = ((h + l - 7 * m + 114) % 31) + 1;
-
     return {year, month, day};
   }
 
   Calandar();
-
-  // Match the bits of Gtk::Calendar you already use
-  void select_month(guint month, guint year); // month = 0..11
-  void select_day(guint day);                 // day = 1..31
+  void select_month(guint month, guint year);
+  void select_day(guint day);
   void get_date(guint &year, guint &month, guint &day) const;
-
   sigc::signal<void> &signal_day_selected();
 
 private:
@@ -42,44 +56,35 @@ private:
     Gtk::Button *button = nullptr;
     Gtk::Label *label = nullptr;
     Gtk::Image *selbg = nullptr;
-
     int year = 0;
     int month = 0;
     int day = 0;
     bool in_current_month = false;
   };
 
-private:
   void build_ui();
   void refresh();
   void refresh_header();
   void refresh_grid();
-
   void on_prev_month();
   void on_next_month();
   void on_day_clicked(int index);
 
   static bool is_leap_year(int year);
-  static int days_in_month(int year, int month);          // month = 1..12
-  static int first_weekday_of_month(int year, int month); // 0=Sun .. 6=Sat
-  static std::string month_name(int month);               // month = 1..12
+  static int days_in_month(int year, int month);
+  static int first_weekday_of_month(int year, int month);
+  static std::string month_name(int month);
 
-private:
   sigc::signal<void> m_signalDaySelected;
-
   Gtk::Box m_headerBox;
   Gtk::Button m_btnPrev;
   Gtk::Label m_lblHeader;
   Gtk::Button m_btnNext;
-
   Gtk::Grid m_grid;
-
   std::array<Gtk::Label *, 7> m_dowLabels{};
   std::array<DayCell, 42> m_cells{};
-
   int m_year = 2026;
-  int m_month = 1; // 1..12
-  int m_day = 1;   // selected day
-
+  int m_month = 1;
+  int m_day = 1;
   Glib::RefPtr<Gtk::CssProvider> m_css;
 };

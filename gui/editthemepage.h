@@ -5,10 +5,40 @@
 #include <string>
 #include <vector>
 
+#include "../drivers/i2c/teensyclient.h"
 #include "../storage/read.h"
 #include "../storage/write.h"
-#include "../drivers/i2c/teensyclient.h"
 #include "colorwheelpicker.h"
+
+#if (SCREEN == 1)
+#define EDITTHEMEPAGE_TOP_MARGIN 12
+#define EDITTHEMEPAGE_MAIN_SPACING 16
+#define EDITTHEMEPAGE_RIGHT_SPACING 10
+#define EDITTHEMEPAGE_SCROLL_HEIGHT 450
+#define EDITTHEMEPAGE_RIGHT_COL_WIDTH 320
+#define EDITTHEMEPAGE_ADD_BTN_WIDTH 160
+#define EDITTHEMEPAGE_ADD_BTN_HEIGHT 48
+#define EDITTHEMEPAGE_OK_SIZE 96
+#define EDITTHEMEPAGE_CANCEL_SIZE 96
+#define EDITTHEMEPAGE_ROW_SPACING 12
+#define EDITTHEMEPAGE_ROW_LABEL_WIDTH 140
+#define EDITTHEMEPAGE_DELETE_WIDTH 100
+#define EDITTHEMEPAGE_DELETE_HEIGHT 40
+#else
+#define EDITTHEMEPAGE_TOP_MARGIN 8
+#define EDITTHEMEPAGE_MAIN_SPACING 10
+#define EDITTHEMEPAGE_RIGHT_SPACING 8
+#define EDITTHEMEPAGE_SCROLL_HEIGHT 320
+#define EDITTHEMEPAGE_RIGHT_COL_WIDTH 240
+#define EDITTHEMEPAGE_ADD_BTN_WIDTH 120
+#define EDITTHEMEPAGE_ADD_BTN_HEIGHT 40
+#define EDITTHEMEPAGE_OK_SIZE 72
+#define EDITTHEMEPAGE_CANCEL_SIZE 72
+#define EDITTHEMEPAGE_ROW_SPACING 8
+#define EDITTHEMEPAGE_ROW_LABEL_WIDTH 110
+#define EDITTHEMEPAGE_DELETE_WIDTH 80
+#define EDITTHEMEPAGE_DELETE_HEIGHT 34
+#endif
 
 class ImageButton;
 
@@ -27,7 +57,7 @@ private:
   struct RowWidgets {
     Gtk::RadioButton *radio = nullptr;
     Gtk::Label *rgbLabel = nullptr;
-    Gtk::Button *deleteBtn;
+    Gtk::Button *deleteBtn = nullptr;
     Gtk::Box *row = nullptr;
   };
 
@@ -42,7 +72,7 @@ private:
   Gtk::ScrolledWindow m_scroll;
   Gtk::Box m_rowsBox{Gtk::ORIENTATION_VERTICAL};
 
-  Gtk::Button *m_addBtn = nullptr; // changed from ImageButton
+  Gtk::Button *m_addBtn = nullptr;
   ImageButton *m_okBtn = nullptr;
   ImageButton *m_cancelBtn = nullptr;
 
