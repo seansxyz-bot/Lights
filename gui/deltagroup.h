@@ -14,13 +14,13 @@
 #define DELTAGROUP_OK_BOTTOM_MARGIN 12
 #define DELTAGROUP_GROUP_BTN_SIZE 190
 #else
-#define DELTAGROUP_TOP_MARGIN 6
-#define DELTAGROUP_MAIN_SPACING 8
-#define DELTAGROUP_LEFT_SPACING 8
-#define DELTAGROUP_ROW_SPACING 10
-#define DELTAGROUP_OK_TOP_MARGIN 2
-#define DELTAGROUP_OK_BOTTOM_MARGIN 7
-#define DELTAGROUP_GROUP_BTN_SIZE 130
+#define DELTAGROUP_TOP_MARGIN 4
+#define DELTAGROUP_MAIN_SPACING 10
+#define DELTAGROUP_LEFT_SPACING 4
+#define DELTAGROUP_ROW_SPACING 6
+#define DELTAGROUP_OK_TOP_MARGIN 4
+#define DELTAGROUP_OK_BOTTOM_MARGIN 6
+#define DELTAGROUP_GROUP_BTN_SIZE 120
 #endif
 
 class ColorWheelPicker;
@@ -44,8 +44,12 @@ public:
 
 private:
   void set_active_group(int group);
+  void set_done_button_cancel(bool cancelMode);
 
 private:
+  std::string m_iconPath;
+  bool m_keypadVisible{false};
+
   int m_groupSelection = 0;
   std::array<GroupColor, 3> m_groupColors{};
 

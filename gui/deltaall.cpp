@@ -6,7 +6,7 @@
 
 DeltaAll::DeltaAll(const std::string &iconPath, int startR, int startG,
                    int startB, int pickerSize, int barSize, int keypadPixelSize)
-    : Gtk::Box(Gtk::ORIENTATION_VERTICAL) {
+    : Gtk::Box(Gtk::ORIENTATION_VERTICAL), m_iconPath(iconPath) {
   LOG_INFO() << "DeltaAll ctor";
 
   set_halign(Gtk::ALIGN_FILL);
@@ -28,13 +28,26 @@ DeltaAll::DeltaAll(const std::string &iconPath, int startR, int startG,
   m_picker->signal_color_changed().connect(
       [this](int r, int g, int b) { m_signalColorChanged.emit(r, g, b); });
 
+  m_picker->signal_keypad_visibility_changed().connect([this](bool shown) {
+    m_keypadVisible = shown;
+    set_done_button_cancel(shown);
+  });
+
   m_okBtn = Gtk::manage(new ImageButton(
       Gdk::Pixbuf::create_from_file(iconPath + "/ok.png"), keypadPixelSize));
 
   m_okBtn->set_halign(Gtk::ALIGN_CENTER);
   m_okBtn->signal_clicked().connect([this]() {
+    if (m_keypadVisible) {
+      if (m_picker)
+        m_picker->dismiss_keypad();
+      return;
+    }
+
     if (m_picker)
-      m_picker->commit_pending(); // make sure throttled value is applied
+      m_picker->commit_pending();
+
+    set_done_button_cancel(false);
     m_signalDone.emit();
   });
 
@@ -44,6 +57,14 @@ DeltaAll::DeltaAll(const std::string &iconPath, int startR, int startG,
   pack_start(m_centBox, Gtk::PACK_SHRINK);
 
   show_all_children();
+}
+
+void DeltaAll::set_done_button_cancel(bool cancelMode) {
+  if (!m_okBtn)
+    return;
+
+  m_okBtn->set_image_path(m_iconPath +
+                          std::string(cancelMode ? "/cancel.png" : "/ok.png"));
 }
 
 sigc::signal<void, int, int, int> &DeltaAll::signal_color_changed() {

@@ -18,18 +18,10 @@ public:
   // Original constructor
   ImageButton(const std::string &image_path, int pixel_size = 64,
               int margin = 6, int padding = 8)
-      : m_pixel_size(pixel_size) {
+      : m_pixel_size(pixel_size), m_margin(margin), m_padding(padding),
+        m_current_image_path(image_path) {
 
-    set_relief(Gtk::RELIEF_NONE);
-    set_can_focus(false);
-
-    set_border_width(padding);
-
-    set_margin_top(margin);
-    set_margin_bottom(margin);
-    set_margin_start(margin);
-    set_margin_end(margin);
-
+    common_init();
     set_image_from_path(image_path);
   }
 
@@ -38,56 +30,25 @@ public:
               const std::string &on_name, int toggled, int pixel_size = 64,
               int margin = 6, int padding = 8)
       : m_icon_path(icon_path), m_off_name(off_name), m_on_name(on_name),
-        m_toggled(toggled ? 1 : 0), m_pixel_size(pixel_size) {
-    set_relief(Gtk::RELIEF_NONE);
-    set_can_focus(false);
+        m_toggled(toggled ? 1 : 0), m_pixel_size(pixel_size), m_margin(margin),
+        m_padding(padding) {
 
-    set_border_width(padding);
-
-    set_margin_top(margin);
-    set_margin_bottom(margin);
-    set_margin_start(margin);
-    set_margin_end(margin);
-
+    common_init();
     update_image();
 
-    // Internal click handler
     signal_clicked().connect(
         sigc::mem_fun(*this, &ImageButton::on_internal_clicked));
   }
 
-  void set_image_from_pixbuf(const Glib::RefPtr<Gdk::Pixbuf> &pixbuf) {
-    if (!pixbuf)
-      return;
-
-    auto scaled =
-        pixbuf->scale_simple(m_pixel_size, m_pixel_size, Gdk::INTERP_BILINEAR);
-
-    m_image.set(scaled);
-    m_image.set_halign(Gtk::ALIGN_CENTER);
-    m_image.set_valign(Gtk::ALIGN_CENTER);
-    set_image(m_image);
-    set_always_show_image(true);
-  }
-
-  // Pixbuf constructor (for generated images)
+  // Pixbuf constructor
   ImageButton(const Glib::RefPtr<Gdk::Pixbuf> &pixbuf, int pixel_size = 64,
               int margin = 6, int padding = 8)
-      : m_pixel_size(pixel_size) {
+      : m_pixel_size(pixel_size), m_margin(margin), m_padding(padding) {
 
-    set_relief(Gtk::RELIEF_NONE);
-    set_can_focus(false);
-    get_style_context()->add_class("flat");
-    set_border_width(0);
-    set_margin_top(margin);
-    set_margin_bottom(margin);
-    set_margin_start(margin);
-    set_margin_end(margin);
+    common_init();
+    get_style_context()->add_class("image-button-clean");
     set_size_request(m_pixel_size, m_pixel_size);
     set_image_from_pixbuf(pixbuf);
-    m_image.set_halign(Gtk::ALIGN_CENTER);
-    m_image.set_valign(Gtk::ALIGN_CENTER);
-    get_style_context()->add_class("image-button-clean");
   }
 
   int get_toggled() const { return m_toggled; }
@@ -99,18 +60,73 @@ public:
 
   bool is_toggled() const { return m_toggled == 1; }
 
+  void set_image_path(const std::string &image_path) {
+    m_current_image_path = image_path;
+    set_image_from_path(image_path);
+  }
+
+  const std::string &image_path() const { return m_current_image_path; }
+
+  void set_pixel_size(int pixel_size) {
+    if (pixel_size <= 0)
+      return;
+
+    m_pixel_size = pixel_size;
+    set_size_request(m_pixel_size, m_pixel_size);
+
+    if (!m_off_name.empty() || !m_on_name.empty()) {
+      update_image();
+    } else if (!m_current_image_path.empty()) {
+      set_image_from_path(m_current_image_path);
+    }
+  }
+
+  void set_image_from_pixbuf(const Glib::RefPtr<Gdk::Pixbuf> &pixbuf) {
+    if (!pixbuf)
+      return;
+
+    auto scaled =
+        pixbuf->scale_simple(m_pixel_size, m_pixel_size, Gdk::INTERP_BILINEAR);
+
+    if (!scaled)
+      return;
+
+    m_image.set(scaled);
+    m_image.set_halign(Gtk::ALIGN_CENTER);
+    m_image.set_valign(Gtk::ALIGN_CENTER);
+    set_image(m_image);
+    set_always_show_image(true);
+  }
+
 private:
   Gtk::Image m_image;
 
   std::string m_icon_path;
   std::string m_off_name;
   std::string m_on_name;
+  std::string m_current_image_path;
 
   int m_toggled = 0;
   int m_pixel_size = 64;
+  int m_margin = 6;
+  int m_padding = 8;
+
+  void common_init() {
+    set_relief(Gtk::RELIEF_NONE);
+    set_can_focus(false);
+
+    set_border_width(m_padding);
+
+    set_margin_top(m_margin);
+    set_margin_bottom(m_margin);
+    set_margin_start(m_margin);
+    set_margin_end(m_margin);
+
+    m_image.set_halign(Gtk::ALIGN_CENTER);
+    m_image.set_valign(Gtk::ALIGN_CENTER);
+  }
 
   void on_internal_clicked() {
-    // Only do toggle logic if this is a toggle-style button
     if (!m_off_name.empty() || !m_on_name.empty()) {
       m_toggled = !m_toggled;
       update_image();
@@ -121,23 +137,36 @@ private:
     if (m_off_name.empty() && m_on_name.empty())
       return;
 
-    std::string full_path;
     if (m_toggled == 0)
-      full_path = m_icon_path + "/" + m_off_name + ".png";
+      m_current_image_path = m_icon_path + "/" + m_off_name + ".png";
     else
-      full_path = m_icon_path + "/" + m_on_name + ".png";
+      m_current_image_path = m_icon_path + "/" + m_on_name + ".png";
 
-    set_image_from_path(full_path);
+    set_image_from_path(m_current_image_path);
   }
 
   void set_image_from_path(const std::string &image_path) {
+    try {
+      auto pixbuf = Gdk::Pixbuf::create_from_file(image_path);
+      if (!pixbuf)
+        return;
 
-    auto pixbuf = Gdk::Pixbuf::create_from_file(image_path);
-    auto scaled =
-        pixbuf->scale_simple(m_pixel_size, m_pixel_size, Gdk::INTERP_BILINEAR);
+      auto scaled = pixbuf->scale_simple(m_pixel_size, m_pixel_size,
+                                         Gdk::INTERP_BILINEAR);
+      if (!scaled)
+        return;
 
-    m_image.set(scaled);
-    set_image(m_image);
-    set_always_show_image(true);
+      m_image.set(scaled);
+      m_image.set_halign(Gtk::ALIGN_CENTER);
+      m_image.set_valign(Gtk::ALIGN_CENTER);
+      set_image(m_image);
+      set_always_show_image(true);
+      m_current_image_path = image_path;
+    } catch (const Glib::Error &ex) {
+      LOG_ERROR() << "ImageButton failed to load image: " << image_path
+                  << " err=" << ex.what();
+    } catch (...) {
+      LOG_ERROR() << "ImageButton failed to load image: " << image_path;
+    }
   }
 };

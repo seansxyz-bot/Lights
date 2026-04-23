@@ -16,9 +16,9 @@
 #define CLOCK_MIN_X -36
 #define CLOCK_MAX_X 36
 #else
-#define CLOCK_DATE_FONT_PX 36
-#define CLOCK_ENV_FONT_PX 36
-#define CLOCK_TIME_FONT_PX 280
+#define CLOCK_DATE_FONT_PX 46
+#define CLOCK_ENV_FONT_PX 46
+#define CLOCK_TIME_FONT_PX 260
 #define CLOCK_TIME_NUDGE_Y -24
 #define CLOCK_MIN_Y -260
 #define CLOCK_MAX_Y 6

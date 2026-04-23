@@ -27,8 +27,12 @@ public:
   sigc::signal<void> &signal_done();
 
 private:
-  Gtk::Box m_centBox{Gtk::ORIENTATION_VERTICAL};
+  void set_done_button_cancel(bool cancelMode);
 
+  std::string m_iconPath;
+  bool m_keypadVisible{false};
+
+  Gtk::Box m_centBox{Gtk::ORIENTATION_VERTICAL};
   ColorWheelPicker *m_picker = nullptr;
   ImageButton *m_okBtn = nullptr;
 

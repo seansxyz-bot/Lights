@@ -7,8 +7,8 @@
 DeltaGroup::DeltaGroup(const std::string &iconPath, int startGroup,
                        const std::array<GroupColor, 3> &groupColors,
                        int pickerSize, int barSize, int keypadPixelSize)
-    : Gtk::Box(Gtk::ORIENTATION_VERTICAL), m_groupSelection(startGroup),
-      m_groupColors(groupColors) {
+    : Gtk::Box(Gtk::ORIENTATION_VERTICAL), m_iconPath(iconPath),
+      m_groupSelection(startGroup), m_groupColors(groupColors) {
   LOG_INFO() << "DeltaGroup ctor";
 
   set_halign(Gtk::ALIGN_FILL);
@@ -45,13 +45,26 @@ DeltaGroup::DeltaGroup(const std::string &iconPath, int startGroup,
     m_signalGroupColorChanged.emit(m_groupSelection, r, g, b);
   });
 
+  m_picker->signal_keypad_visibility_changed().connect([this](bool shown) {
+    m_keypadVisible = shown;
+    set_done_button_cancel(shown);
+  });
+
   m_okBtn = Gtk::manage(new ImageButton(iconPath + "/ok.png", keypadPixelSize));
   m_okBtn->set_halign(Gtk::ALIGN_CENTER);
   m_okBtn->set_margin_top(DELTAGROUP_OK_TOP_MARGIN);
   m_okBtn->set_margin_bottom(DELTAGROUP_OK_BOTTOM_MARGIN);
   m_okBtn->signal_clicked().connect([this]() {
+    if (m_keypadVisible) {
+      if (m_picker)
+        m_picker->dismiss_keypad();
+      return;
+    }
+
     if (m_picker)
       m_picker->commit_pending();
+
+    set_done_button_cancel(false);
     m_signalDone.emit();
   });
 
@@ -74,11 +87,18 @@ DeltaGroup::DeltaGroup(const std::string &iconPath, int startGroup,
   show_all_children();
 }
 
+void DeltaGroup::set_done_button_cancel(bool cancelMode) {
+  if (!m_okBtn)
+    return;
+
+  m_okBtn->set_image_path(m_iconPath +
+                          std::string(cancelMode ? "/cancel.png" : "/ok.png"));
+}
+
 void DeltaGroup::set_active_group(int group) {
   if (group < 0 || group > 2)
     return;
 
-  // Make sure any throttled picker value is applied before switching groups
   if (m_picker)
     m_picker->commit_pending();
 

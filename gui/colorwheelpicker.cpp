@@ -237,10 +237,28 @@ void ColorWheelPicker::show_keypad_for(std::string PATH, Gtk::Entry *which) {
   }
 
   m_stack.set_visible_child("keypad");
+  m_signalKeypadVisibilityChanged.emit(true);
+}
+bool ColorWheelPicker::keypad_visible() const {
+  return m_stack.get_visible_child_name() == "keypad";
 }
 
+void ColorWheelPicker::dismiss_keypad() {
+  if (!keypad_visible())
+    return;
+
+  m_stack.set_visible_child("picker");
+  m_signalKeypadVisibilityChanged.emit(false);
+  m_activeEntry = nullptr;
+
+  if (m_wheel.get_visible() && m_wheel.get_can_focus())
+    m_wheel.grab_focus();
+  else if (m_bar.get_visible() && m_bar.get_can_focus())
+    m_bar.grab_focus();
+}
 void ColorWheelPicker::hide_keypad_and_apply(int v) {
   m_stack.set_visible_child("picker");
+  m_signalKeypadVisibilityChanged.emit(false);
 
   if (m_activeEntry) {
     set_entry_value(*m_activeEntry, v);
@@ -714,6 +732,10 @@ void ColorWheelPicker::set_from_wheel_point(double x, double y,
 
 void ColorWheelPicker::set_header_text(const std::string &text) {
   m_headerLbl.set_text(text);
+}
+
+sigc::signal<void, bool> &ColorWheelPicker::signal_keypad_visibility_changed() {
+  return m_signalKeypadVisibilityChanged;
 }
 
 void ColorWheelPicker::commit_pending() { flush_pending_now(); }

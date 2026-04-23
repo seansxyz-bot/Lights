@@ -13,6 +13,9 @@ public:
   };
   void set_header_text(const std::string &text);
   void commit_pending();
+  bool keypad_visible() const;
+  void dismiss_keypad();
+
   ColorWheelPicker(std::string PATH, const std::string &headerText, int red,
                    int green, int blue, int wheel_diameter = 220,
                    int bar_width = 26,
@@ -33,6 +36,7 @@ public:
   void set_b(int b);
 
   sigc::signal<void, int, int, int> &signal_color_changed();
+  sigc::signal<void, bool> &signal_keypad_visibility_changed();
 
 private:
   Gtk::Label m_headerLbl;
@@ -70,6 +74,7 @@ private:
   bool m_updatingEntries{false};
 
   sigc::signal<void, int, int, int> m_signalColorChanged;
+  sigc::signal<void, bool> m_signalKeypadVisibilityChanged;
 
   bool on_entry_focus_in(std::string PATH, GdkEventFocus *e, Gtk::Entry *which);
   void show_keypad_for(std::string PATH, Gtk::Entry *which);
