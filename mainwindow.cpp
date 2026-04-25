@@ -74,14 +74,18 @@ void MainWindow::initializeStartupState() {
   });
 
   LOG_INFO() << "Applying startup power state";
-  if (m_options.on) {
-    if (!m_powerSwitch.setEnabled(false)) {
-      LOG_WARN() << "Failed to set startup power on: "
-                 << m_powerSwitch.lastError();
-    } else {
-      m_options.on = 0;
-      writeOptions(SETTINGS_PATH, m_options);
-    }
+  bool desiredPowerOn = m_options.on != 0;
+
+  if (m_options.sensor) {
+    desiredPowerOn = m_lightSensorThread.readOnce();
+
+    m_options.on = desiredPowerOn ? 1 : 0;
+    writeOptions(SETTINGS_PATH, m_options);
+  }
+
+  if (!m_powerSwitch.setEnabled(desiredPowerOn)) {
+    LOG_WARN() << "Failed to apply startup power state: "
+               << m_powerSwitch.lastError();
   }
 
   if (!m_ampSwitch.setEnabled(false)) {
@@ -126,6 +130,9 @@ void MainWindow::startThreads() {
   m_mobileLightsPoller =
       std::make_unique<MobileLightsPoller>(m_ledInfo, m_options, m_schedule);
   m_mobileLightsPoller->start();
+  if (m_options.sensor) {
+    m_lightSensorThread.start();
+  }
 }
 
 void MainWindow::startConnections() {
@@ -177,6 +184,9 @@ void MainWindow::startConnections() {
 
   m_btPowerChangedConn = m_btControl.signal_power_changed().connect(
       sigc::mem_fun(*this, &MainWindow::onBluetoothPowerChanged));
+
+  m_lightSensorConn = m_lightSensorThread.signal_sensor_changed().connect(
+      sigc::mem_fun(*this, &MainWindow::onLightSensorChanged));
 }
 
 void MainWindow::buildShell() {
@@ -294,6 +304,21 @@ void MainWindow::connectPageSignals() {
   }
 }
 
+void MainWindow::onLightSensorChanged(bool sensorWantsLightsOn) {
+  LOG_INFO() << "Light sensor changed -> "
+             << (sensorWantsLightsOn ? "ON" : "OFF");
+
+  m_options.on = sensorWantsLightsOn ? 1 : 0;
+  writeOptions(SETTINGS_PATH, m_options);
+
+  if (!m_powerSwitch.setEnabled(sensorWantsLightsOn)) {
+    LOG_WARN() << "Failed to apply light sensor power state: "
+               << m_powerSwitch.lastError();
+  }
+
+  updateLightShowState();
+}
+
 void MainWindow::onMobileOptionsChanged(const Options &options) {
   if (m_options == options)
     return;
@@ -358,10 +383,29 @@ void MainWindow::showSettingsPage() {
       Gtk::manage(new Settings(ICON_PATH, m_options, m_bluetoothState));
 
   m_settingsPage->signal_auto_sensor_toggled().connect([this](bool enabled) {
-    m_options.sensor = enabled;
-    writeOptions(std::string(SETTINGS_PATH), m_options);
-    if (!enabled)
-      m_powerSwitch.setEnabled(enabled);
+    m_options.sensor = enabled ? 1 : 0;
+    writeOptions(SETTINGS_PATH, m_options);
+
+    if (enabled) {
+      const bool sensorWantsLightsOn = m_lightSensorThread.readOnce();
+
+      m_options.on = sensorWantsLightsOn ? 1 : 0;
+      writeOptions(SETTINGS_PATH, m_options);
+
+      if (!m_powerSwitch.setEnabled(sensorWantsLightsOn)) {
+        LOG_WARN() << "Failed to apply sensor state: "
+                   << m_powerSwitch.lastError();
+      }
+
+      m_lightSensorThread.start();
+    } else {
+      m_lightSensorThread.stop();
+
+      // Leave lights in their current state.
+      // User can use the normal Lights button after this.
+    }
+
+    updateLightShowState();
   });
 
   m_settingsPage->signal_lights_toggled().connect([this](bool enabled) {
@@ -1324,7 +1368,8 @@ void MainWindow::onPowerSwitchChanged(bool enabled) {
              << (enabled ? "ON" : "OFF");
 
   m_options.on = enabled ? 1 : 0;
-  writeOptions(SETTINGS_PATH, m_options);
+  if (!m_shuttingDown)
+    writeOptions(SETTINGS_PATH, m_options);
   updateLightShowState();
 }
 
@@ -1689,6 +1734,8 @@ MainWindow::~MainWindow() {
 
   if (m_scheduledEventConn.connected())
     m_scheduledEventConn.disconnect();
+
+  m_lightSensorThread.stop();
 
   if (!m_powerSwitch.setEnabled(false)) {
     LOG_WARN() << "Failed to turn power off in dtor: "

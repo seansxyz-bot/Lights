@@ -17,6 +17,7 @@
 #include "gui/themes.h"
 #include "gui/toastmessage.h"
 #include "threads/doorbellthread.h"
+#include "threads/lightsensorthread.h"
 #include "threads/mobilelightspoller.h"
 #include "utils/parserhelper.h"
 #include <atomic>
@@ -124,6 +125,7 @@ private:
 
   // ---------- app threads ----------
   DoorbellThread m_doorbellThread;
+  LightSensorThread m_lightSensorThread;
   std::unique_ptr<MobileLightsPoller> m_mobileLightsPoller;
 
   // ---------- app connections ----------
@@ -133,6 +135,7 @@ private:
   sigc::connection m_newYearConn;
   sigc::connection m_scheduledEventConn;
   sigc::connection m_doorbellConn;
+  sigc::connection m_lightSensorConn;
   sigc::connection m_bluetoothPollConn;
   sigc::connection m_toastHideConn;
 
@@ -192,6 +195,7 @@ private:
   bool isGameDay(const std::string &date);
   std::string addHours(const std::string &time24, int hours);
   void onDoorbellChanged(bool pressed);
+  void onLightSensorChanged(bool sensorWantsLightsOn);
 
   void createTeamListPage();
   void createEditTeamPage(const TeamRecord &team);
