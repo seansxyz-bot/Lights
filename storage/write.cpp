@@ -125,6 +125,7 @@ int writeOptions(std::string path, Options data) {
   }
 
   auto writeOne = [&](const std::string &name, int value) -> bool {
+    std::cout << "ONN - " << name << " - " << value << std::endl;
     sqlite3_reset(stmt);
     sqlite3_clear_bindings(stmt);
 
@@ -286,6 +287,71 @@ int writeThemeColors(std::string path, const std::vector<Theme> &themes) {
     }
     if (!ok)
       break;
+  }
+
+  sqlite3_finalize(stmt);
+
+  if (!ok) {
+    execSQL(db, "ROLLBACK;");
+    sqlite3_close(db);
+    return 0;
+  }
+
+  if (!execSQL(db, "COMMIT;")) {
+    execSQL(db, "ROLLBACK;");
+    sqlite3_close(db);
+    return 0;
+  }
+
+  sqlite3_close(db);
+  return 1;
+}
+
+int writePatternSpeeds(std::string path, const std::vector<Pattern> &patterns) {
+  const std::string dbPath = path + "/lights.db";
+
+  sqlite3 *db = nullptr;
+  if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
+    std::cerr << "Failed to open DB: " << dbPath << "\n";
+    if (db)
+      sqlite3_close(db);
+    return 0;
+  }
+
+  if (!execSQL(db, "BEGIN TRANSACTION;")) {
+    sqlite3_close(db);
+    return 0;
+  }
+
+  const char *sql = R"(
+    INSERT INTO pattern_speeds (id, speed)
+    VALUES (?, ?)
+    ON CONFLICT(id) DO UPDATE SET speed = excluded.speed;
+  )";
+
+  sqlite3_stmt *stmt = nullptr;
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    std::cerr << "Prepare failed: " << sqlite3_errmsg(db) << "\n";
+    execSQL(db, "ROLLBACK;");
+    sqlite3_close(db);
+    return 0;
+  }
+
+  bool ok = true;
+
+  for (const auto &p : patterns) {
+    sqlite3_reset(stmt);
+    sqlite3_clear_bindings(stmt);
+
+    sqlite3_bind_int(stmt, 1, p.id);
+    sqlite3_bind_int(stmt, 2, p.speed);
+
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+      std::cerr << "Insert/update pattern speed failed: " << sqlite3_errmsg(db)
+                << "\n";
+      ok = false;
+      break;
+    }
   }
 
   sqlite3_finalize(stmt);

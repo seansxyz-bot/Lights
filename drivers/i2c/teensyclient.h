@@ -1,6 +1,8 @@
 #pragma once
+
 #include "../../models/types.h"
 #include "../../utils/logger.h"
+
 #include <atomic>
 #include <cstdint>
 #include <mutex>
@@ -64,16 +66,22 @@ public:
                  uint8_t version = 1);
   bool sendThemeColor(uint8_t r, uint8_t g, uint8_t b);
   bool sendThemeColors(uint8_t themeId, const std::vector<RGB_Color> &colors);
+
+  bool sendPatternSpeed(uint8_t speed);
+  bool sendPatternSpeeds(uint8_t patternId, const std::vector<uint8_t> &speeds);
+
   bool endFile(uint8_t expectedLines);
   bool abortFile();
 
   static inline uint32_t mask24FromBitString(std::string bitStr) {
     bitStr = std::string(NUM_OF_PADDED_0S, '0') + bitStr;
+
     std::string s;
     s.reserve(bitStr.size());
-    for (char c : bitStr)
+    for (char c : bitStr) {
       if (c == '0' || c == '1')
         s.push_back(c);
+    }
 
     uint32_t mask = 0;
     int len = static_cast<int>(s.size());
@@ -105,6 +113,7 @@ private:
   bool fake_connected_ = false;
   uint8_t fake_file_status_ = FILE_IDLE;
   std::vector<uint8_t> fake_led_state_;
+
   uint8_t fake_file_type_ = 0;
   uint8_t fake_file_id_ = 0;
   uint8_t fake_expected_lines_ = 0;

@@ -1,12 +1,13 @@
 #include "settings.h"
 
+#include "../storage/write.h"
 #include "../utils/logger.h"
 #include "imgbutton.h"
 
-Settings::Settings(const std::string &iconPath, bool autoSensorOn,
-                   bool lightsOn, bool bluetoothOn)
-    : Gtk::Box(Gtk::ORIENTATION_VERTICAL), m_autoSensorOn(autoSensorOn),
-      m_lightsOn(lightsOn), m_bluetoothOn(bluetoothOn) {
+Settings::Settings(const std::string &iconPath, Options &opt, bool bluetoothOn)
+    : Gtk::Box(Gtk::ORIENTATION_VERTICAL), m_autoSensorOn(opt.sensor),
+      m_lightsOn(opt.on), m_bluetoothOn(bluetoothOn) {
+
   LOG_INFO() << "Settings ctor";
 
   set_halign(Gtk::ALIGN_FILL);

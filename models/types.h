@@ -20,6 +20,11 @@ struct Theme {
   std::vector<RGB_Color> colors;
 };
 
+struct Pattern {
+  int id{0};
+  int speed{50};
+};
+
 struct TeamRecord {
   int id = 0;
   std::string name;

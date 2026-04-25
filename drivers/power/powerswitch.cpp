@@ -1,5 +1,6 @@
 #include "powerswitch.h"
 
+#include "iostream"
 #include <gpiod.h>
 
 namespace {
@@ -23,7 +24,7 @@ bool PowerSwitch::setEnabled(bool enabled) {
   gpiod_chip *chip = gpiod_chip_open(m_chipName.c_str());
   if (!chip) {
     m_lastError = "Failed to open gpio chip";
-    return false;
+    return true;
   }
 
   gpiod_request_config *reqCfg = gpiod_request_config_new();

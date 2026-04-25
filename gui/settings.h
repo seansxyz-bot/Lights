@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../models/types.h"
 #include <gtkmm.h>
 #include <sigc++/sigc++.h>
 #include <string>
@@ -28,8 +29,7 @@ class ImageButton;
 
 class Settings : public Gtk::Box {
 public:
-  Settings(const std::string &iconPath, bool autoSensorOn, bool lightsOn,
-           bool bluetoothOn);
+  Settings(const std::string &iconPath, Options &opt, bool bluetoothOn);
   virtual ~Settings() = default;
 
   void set_restart_enabled(bool enabled);

@@ -96,6 +96,7 @@ void MainWindow::loadSettings() {
 
   m_ledInfo = readLEDInfo(std::string(SETTINGS_PATH));
   m_options = readOptions(std::string(SETTINGS_PATH));
+  std::cout << "ONNNN - " << m_options.on << std::endl;
   m_schedule = readSchedule(std::string(SETTINGS_PATH));
   m_themes = readThemeColors(std::string(SETTINGS_PATH));
 
@@ -353,8 +354,8 @@ void MainWindow::showSettingsPage() {
 
   destroyTemporaryPage("settings");
 
-  m_settingsPage = Gtk::manage(new Settings(ICON_PATH, m_options.sensor,
-                                            m_options.on, m_bluetoothState));
+  m_settingsPage =
+      Gtk::manage(new Settings(ICON_PATH, m_options, m_bluetoothState));
 
   m_settingsPage->signal_auto_sensor_toggled().connect([this](bool enabled) {
     m_options.sensor = enabled;

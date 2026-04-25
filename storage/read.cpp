@@ -346,3 +346,42 @@ bool loadLedRestoreState(const std::string &dbPath,
   LOG_INFO() << "Loaded LED restore state (" << count << " LEDs)";
   return true;
 }
+
+std::vector<Pattern> readPatternSpeeds(std::string path) {
+  const std::string dbPath = path + "/lights.db";
+  std::vector<Pattern> patterns;
+
+  sqlite3 *db = nullptr;
+  if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
+    std::cerr << "Failed to open DB: " << dbPath << "\n";
+    if (db)
+      sqlite3_close(db);
+    return patterns;
+  }
+
+  const char *sql = R"(
+    SELECT id, speed
+    FROM pattern_speeds
+    ORDER BY id;
+  )";
+
+  sqlite3_stmt *stmt = nullptr;
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    std::cerr << "Failed to prepare pattern_speeds query: "
+              << sqlite3_errmsg(db) << "\n";
+    sqlite3_close(db);
+    return patterns;
+  }
+
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    Pattern p;
+    p.id = sqlite3_column_int(stmt, 0);
+    p.speed = sqlite3_column_int(stmt, 1);
+    patterns.push_back(p);
+  }
+
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+
+  return patterns;
+}

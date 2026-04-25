@@ -1,12 +1,25 @@
 #include "teensyclient.h"
+
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
-#include <fcntl.h>
 #include <iostream>
+
+#ifndef UBUNTU
+#define UBUNTU 0
+#endif
+
+#if UBUNTU != 1
+#include <fcntl.h>
 #include <linux/i2c-dev.h>
 #include <linux/i2c.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
+#endif
+
+namespace {
+static inline uint8_t clampSpeed(uint8_t v) { return (v > 100) ? 100 : v; }
+} // namespace
 
 TeensyClient::TeensyClient() : bus_("/dev/i2c-1"), addr_(0x08) {
 #if UBUNTU == 1
@@ -52,6 +65,7 @@ bool TeensyClient::openBus() { return ensureOpen(); }
 
 void TeensyClient::closeBus() {
   std::lock_guard<std::mutex> lk(mtx_);
+
 #if UBUNTU == 1
   fake_connected_ = false;
   fake_file_status_ = FILE_IDLE;
@@ -155,19 +169,16 @@ bool TeensyClient::write8(uint8_t b0, uint8_t b1, uint8_t b2, uint8_t b3,
             << int(b1) << " " << int(b2) << " " << int(b3) << " " << int(b4)
             << " " << int(b5) << " " << int(b6) << " " << int(b7) << std::dec
             << "\n";
-
   fakeHandleWriteLocked(b0, b1, b2, b3, b4, b5, b6, b7);
   return true;
 #else
   uint8_t buf[8] = {b0, b1, b2, b3, b4, b5, b6, b7};
-
-  ssize_t w = ::write(fd_, buf, sizeof(buf));
+  const ssize_t w = ::write(fd_, buf, sizeof(buf));
   if (w != static_cast<ssize_t>(sizeof(buf))) {
     std::cerr << "[i2c] write8 short/err (" << w
               << "): " << std::strerror(errno) << "\n";
     return false;
   }
-
   return true;
 #endif
 }
@@ -191,7 +202,6 @@ bool TeensyClient::applyMaskedRGB(uint32_t mask24, uint8_t r, uint8_t g,
 
 bool TeensyClient::applyThemePattern(uint8_t themeId, uint8_t patternId) {
   const uint8_t channel = static_cast<uint8_t>(4 + themeId);
-
   return write8(CMD_APPLY_MASK, channel, 0u, 0u, 0u, patternId, 0u, 0u);
 }
 
@@ -199,7 +209,6 @@ bool TeensyClient::requestThenRead(uint8_t req_code, uint8_t *rx,
                                    size_t rx_len) {
   if (!on.load(std::memory_order_relaxed))
     return false;
-
   if (rx == nullptr || rx_len == 0)
     return false;
 
@@ -260,13 +269,12 @@ bool TeensyClient::requestThenRead(uint8_t req_code, uint8_t *rx,
   rdwr.msgs = msgs;
   rdwr.nmsgs = 2;
 
-  int rc = ::ioctl(fd_, I2C_RDWR, &rdwr);
+  const int rc = ::ioctl(fd_, I2C_RDWR, &rdwr);
   if (rc != 2) {
     std::cerr << "[i2c] I2C_RDWR failed (rc=" << rc
               << "): " << std::strerror(errno) << "\n";
     return false;
   }
-
   return true;
 #endif
 }
@@ -330,6 +338,39 @@ bool TeensyClient::sendThemeColors(uint8_t themeId,
   }
 
   if (!endFile(static_cast<uint8_t>(colors.size()))) {
+    abortFile();
+    return false;
+  }
+
+  return true;
+}
+
+bool TeensyClient::sendPatternSpeed(uint8_t speed) {
+  return write8(CMD_FILE_CHUNK, clampSpeed(speed), 0u, 0u, 0u, 0u, 0u, 0u);
+}
+
+bool TeensyClient::sendPatternSpeeds(uint8_t patternId,
+                                     const std::vector<uint8_t> &speeds) {
+  if (patternId == 0)
+    return false;
+
+  const bool isCombo = (patternId == 1);
+  const size_t expected = isCombo ? 7u : 1u;
+
+  if (speeds.size() != expected)
+    return false;
+
+  if (!beginFile(FILE_PATTERN, patternId, static_cast<uint8_t>(expected), 1))
+    return false;
+
+  for (uint8_t speed : speeds) {
+    if (!sendPatternSpeed(speed)) {
+      abortFile();
+      return false;
+    }
+  }
+
+  if (!endFile(static_cast<uint8_t>(expected))) {
     abortFile();
     return false;
   }
