@@ -473,8 +473,9 @@ void MainWindow::startBluetoothTransition(bool enable) {
 
     if (enable) {
       if (!m_btControl.powerOn()) {
-        toast = m_btControl.lastError().empty() ? "Failed to power on bluetooth"
-                                                : m_btControl.lastError();
+        LOG_ERROR() << (m_btControl.lastError().empty()
+                            ? "Failed to power on bluetooth"
+                            : m_btControl.lastError());
       } else {
         if (!m_ampSwitch.setEnabled(true)) {
           LOG_WARN() << "Failed to turn amp on: " << m_ampSwitch.lastError();
@@ -489,9 +490,8 @@ void MainWindow::startBluetoothTransition(bool enable) {
 
         if (!m_btControl.startScan()) {
           LOG_WARN() << "Failed to start bluetooth scan";
-          toast = "Bluetooth on, but scan failed";
         } else {
-          toast = "Bluetooth pairing mode on";
+          LOG_WARN() << "Bluetooth pairing mode on";
         }
 
         success = true;
@@ -508,11 +508,10 @@ void MainWindow::startBluetoothTransition(bool enable) {
       m_bluezAgent.stop();
 
       if (!m_btControl.powerOff()) {
-        toast = m_btControl.lastError().empty()
-                    ? "Failed to power off bluetooth"
-                    : m_btControl.lastError();
+        LOG_ERROR() << (m_btControl.lastError().empty()
+                            ? "Failed to power off bluetooth"
+                            : m_btControl.lastError());
       } else {
-
         m_bluetoothState = 0;
         toast = "Bluetooth off";
         success = true;
