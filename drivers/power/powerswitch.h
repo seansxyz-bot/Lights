@@ -5,8 +5,8 @@
 
 class PowerSwitch {
 public:
-  static constexpr int SR_SWITCH = 10;
-  static constexpr int TEENSY_SWITCH = 9;
+  static constexpr int SR_SWITCH = 10;    // ON == LOW
+  static constexpr int TEENSY_SWITCH = 9; // ON == HIGH
 
   explicit PowerSwitch(const std::string &chipName = "/dev/gpiochip0");
 

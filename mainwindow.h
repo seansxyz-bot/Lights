@@ -2,6 +2,13 @@
 
 #include "utils/logger.h"
 
+#if (UBUNTU == 1)
+#define DOORBELL_SOUND_DEVICE                                                  \
+  "paplay --device=alsa_output.pci-0000_00_05.0.analog-stereo"
+#else
+#define DOORBELL_SOUND_DEVICE ""
+#endif
+
 #include "bluetooth/bluezagent.h"
 #include "bluetooth/btcontrol.h"
 #include "drivers/gpio/gpiohelper.h"

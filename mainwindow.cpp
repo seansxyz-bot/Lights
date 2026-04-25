@@ -1215,9 +1215,8 @@ void MainWindow::onDoorbellChanged(bool pressed) {
   LOG_INFO() << "Doorbell changed: " << (pressed ? "PRESSED" : "RELEASED");
 
   if (pressed) {
-    std::string cmd =
-        "paplay --device=alsa_output.pci-0000_00_05.0.analog-stereo " +
-        std::string(SETTINGS_PATH) + "/sounds/doorbell.ogg";
+    std::string cmd = std::string(DOORBELL_SOUND_DEVICE) + " " +
+                      std::string(SETTINGS_PATH) + "/sounds/doorbell.ogg";
 
     system(cmd.c_str());
   }
@@ -1438,9 +1437,14 @@ void MainWindow::stopLightShow() {
 
   m_lightShowRunning = false;
 
-  // send to teensy
-  // for(int i =0; i < m_ledInfo.size(); i++)
-  // m_teensyClient.applyMaskedSingle();
+  for (const auto &led : m_ledInfo) {
+    const uint32_t mask =
+        (1u << led.redPin) | (1u << led.grnPin) | (1u << led.bluPin);
+
+    m_teensyClient.applyMaskedRGB(mask, led.redVal, led.grnVal, led.bluVal);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(40));
+  }
 }
 
 void MainWindow::sendThemeToTeensyAsync(int themeId,

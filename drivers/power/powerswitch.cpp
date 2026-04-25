@@ -11,7 +11,7 @@ gpiod_line_value toLineValue(int v) {
 // Adjust these if your hardware logic is inverted.
 int teensyValueForEnabled(bool enabled) { return enabled ? 1 : 0; }
 
-int srValueForEnabled(bool enabled) { return enabled ? 1 : 0; }
+int srValueForEnabled(bool enabled) { return enabled ? 0 : 1; }
 } // namespace
 
 PowerSwitch::PowerSwitch(const std::string &chipName) : m_chipName(chipName) {}
