@@ -72,7 +72,7 @@ public:
   bool sendThemeColor(uint8_t r, uint8_t g, uint8_t b);
   bool sendThemeColors(uint8_t themeId, const std::vector<RGB_Color> &colors);
 
-  bool sendPatternSpeed(uint8_t patternId, uint8_t speed);
+  bool sendPatternSpeed(uint8_t speed);
   bool sendPatternSpeeds(const std::vector<Pattern> &patterns);
 
   bool endFile(uint8_t expectedLines);

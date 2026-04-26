@@ -232,27 +232,36 @@ bool TeensyClient::sendThemeColors(uint8_t themeId,
 // ============================================================
 
 // Single line (patternId + speed)
-bool TeensyClient::sendPatternSpeed(uint8_t patternId, uint8_t speed) {
-  return write8(CMD_FILE_CHUNK, patternId, clampSpeed(speed), 0, 0, 0, 0, 0);
+bool TeensyClient::sendPatternSpeed(uint8_t speed) {
+  return write8(CMD_FILE_CHUNK, speed, 0, 0, 0, 0, 0, 0);
 }
 
 // Send ALL patterns (this matches MainWindow usage)
 bool TeensyClient::sendPatternSpeeds(const std::vector<Pattern> &patterns) {
+  constexpr uint8_t kPatternBulkFileId = 1;
+  constexpr uint8_t kPatternSpeedCount = 7; // IDs 2..8
+  constexpr uint8_t kPatternFileVersion = 1;
 
-  if (patterns.empty())
+  if (!beginFile(FILE_PATTERN, kPatternBulkFileId, kPatternSpeedCount,
+                 kPatternFileVersion)) {
     return false;
+  }
 
-  if (!beginFile(FILE_PATTERN, 1, patterns.size(), 1))
-    return false;
+  for (uint8_t patternId = 2; patternId <= 8; ++patternId) {
+    auto it = std::find_if(
+        patterns.begin(), patterns.end(),
+        [patternId](const Pattern &p) { return p.id == patternId; });
 
-  for (const auto &p : patterns) {
-    if (!sendPatternSpeed(p.id, p.speed)) {
+    const uint8_t speed =
+        (it != patterns.end()) ? static_cast<uint8_t>(it->speed) : 50;
+
+    if (!sendPatternSpeed(speed)) {
       abortFile();
       return false;
     }
   }
 
-  return endFile(patterns.size());
+  return endFile(kPatternSpeedCount);
 }
 
 // ============================================================
