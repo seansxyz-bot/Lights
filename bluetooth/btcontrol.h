@@ -2,11 +2,18 @@
 
 #include "bluezclient.h"
 
+#include "../utils/logger.h"
 #include "bluezagent.h"
 #include <optional>
 #include <sigc++/sigc++.h>
 #include <string>
 #include <vector>
+
+#if (UBUNTU)
+#define BLUETOOTH_NAME "Light Controller-Dev"
+#else
+#define BLUETOOTH_NAME "Light Controller"
+#endif
 
 struct BTDevice {
   int id = 0;

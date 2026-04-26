@@ -229,8 +229,7 @@ bool BTControl::upsertDevice(const BTDevice &device) const {
   sqlite3_bind_int(stmt, 7, device.connected ? 1 : 0);
   sqlite3_bind_int(stmt, 8, device.discovered ? 1 : 0);
   sqlite3_bind_int(stmt, 9, device.displayOrder);
-  sqlite3_bind_text(stmt, 10, device.lastSeenUtc.c_str(), -1,
-                    SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, 10, device.lastSeenUtc.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_text(stmt, 11, device.lastConnectedUtc.c_str(), -1,
                     SQLITE_TRANSIENT);
   sqlite3_bind_int(stmt, 12, device.connectCount);
@@ -353,7 +352,7 @@ bool BTControl::powerOn() {
     }
   }
 
-  if (!setSystemAlias("Light Controller-Dev")) {
+  if (!setSystemAlias(BLUETOOTH_NAME)) {
     LOG_WARN() << "Bluetooth powered on but failed to set alias";
   }
 
