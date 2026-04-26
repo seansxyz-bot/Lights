@@ -138,6 +138,7 @@ set(SOURCES
 add_executable(LightingControl ${SOURCES}
     utils/ui_metrics.h
     threads/lightsensorthread.h threads/lightsensorthread.cpp
+    gui/editpattern.h gui/editpattern.cpp
 )
 
 set_target_properties(LightingControl PROPERTIES
