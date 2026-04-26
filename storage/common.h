@@ -20,3 +20,5 @@
 
 extern HttpHelper http;
 extern std::atomic<bool> writeToServer;
+
+bool ensureSportsSchema(const std::string &dbPath);

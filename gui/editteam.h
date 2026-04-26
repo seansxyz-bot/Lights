@@ -50,6 +50,7 @@ public:
 
   sigc::signal<void, std::string> &signal_validation_failed();
   sigc::signal<void> &signal_saved();
+  sigc::signal<void> &signal_deleted();
   sigc::signal<void> &signal_cancel();
 
 private:
@@ -70,6 +71,11 @@ private:
   void updateLogoPreview(const Glib::RefPtr<Gdk::Pixbuf> &pixbuf);
   void loadExistingLogoPreview();
   bool validateFields(std::string &message) const;
+  std::vector<TeamAnimation> collectAnimations() const;
+  void loadAnimationEntries();
+  static std::vector<std::string> splitAnimationPaths(const std::string &text);
+  static std::string joinAnimationPaths(const std::vector<TeamAnimation> &items,
+                                        const std::string &type);
 
   void clearLogoPreview();
   bool onLogoAreaButtonPress(GdkEventButton *event);
@@ -92,12 +98,22 @@ private:
   Gtk::Entry m_nameEntry;
   Gtk::Entry m_leagueEntry;
   Gtk::Entry m_teamCodeEntry;
+  Gtk::Entry m_homeAwayEntry;
   Gtk::Entry m_nextGameUrlEntry;
   Gtk::Entry m_nextGameParserEntry;
   Gtk::Entry m_liveGameUrlEntry;
   Gtk::Entry m_liveGameParserEntry;
   Gtk::Entry m_apiTeamIdEntry;
   Gtk::Entry m_themeNameEntry;
+  Gtk::Entry m_themeIdEntry;
+  Gtk::Entry m_iconPathEntry;
+  Gtk::Entry m_displayOrderEntry;
+  Gtk::CheckButton m_enabledCheck{"Enabled"};
+
+  Gtk::Entry m_gameDayAnimationsEntry;
+  Gtk::Entry m_homeScoreAnimationsEntry;
+  Gtk::Entry m_blowoutAnimationsEntry;
+  Gtk::Entry m_lopsidedAnimationsEntry;
 
   Gtk::Entry m_color1Entry;
   Gtk::Entry m_color2Entry;
@@ -119,9 +135,11 @@ private:
   Glib::RefPtr<Gdk::Pixbuf> m_logoPixbuf;
 
   ImageButton *m_okBtn = nullptr;
+  ImageButton *m_deleteBtn = nullptr;
   ImageButton *m_cancelBtn = nullptr;
 
   sigc::signal<void> m_signalSaved;
+  sigc::signal<void> m_signalDeleted;
   sigc::signal<void> m_signalCancel;
   sigc::signal<void, std::string> m_signalValidationFailed;
 };

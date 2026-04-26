@@ -35,6 +35,7 @@ private:
   void reset_timing();
   void update(double dt);
   void render_frame(int width, int height);
+  void loadAnimationFile(const std::string &path);
 
 private:
   TeamRecord m_teamRecord;
@@ -53,6 +54,11 @@ private:
   float m_cameraX = 0.0f;
   float m_cameraY = 1.2f;
   float m_cameraZ = 6.0f;
+
+  std::string m_animationType;
+  std::string m_animationPath;
+  Renderer::Color m_primaryColor{0.2f, 0.7f, 1.0f, 1.0f};
+  Renderer::Color m_secondaryColor{0.2f, 0.2f, 0.25f, 1.0f};
 
   bool m_glReady = false;
 };

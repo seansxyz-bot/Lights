@@ -35,7 +35,7 @@ std::string EnvironmentThread::lastError() const {
   return m_lastError;
 }
 
-sigc::signal<void, EnvironmentThread::Reading>
+sigc::signal<void, EnvironmentThread::Reading> &
 EnvironmentThread::signal_environment_changed() {
   return m_signalEnvironmentChanged;
 }

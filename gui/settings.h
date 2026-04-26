@@ -29,11 +29,13 @@ class ImageButton;
 
 class Settings : public Gtk::Box {
 public:
-  Settings(const std::string &iconPath, Options &opt, bool bluetoothOn);
+  Settings(const std::string &iconPath, Options &opt, bool bluetoothOn,
+           bool lightShowOn);
   virtual ~Settings() = default;
 
   void set_restart_enabled(bool enabled);
   void set_bluetooth_enabled(bool enabled);
+  void set_lightshow_enabled(bool enabled);
 
   sigc::signal<void, bool> &signal_auto_sensor_toggled();
   sigc::signal<void, bool> &signal_lights_toggled();
@@ -41,6 +43,7 @@ public:
   sigc::signal<void> &signal_edit_theme_requested();
   sigc::signal<void> &signal_edit_pattern_requested();
   sigc::signal<void> &signal_edit_teams_requested();
+  sigc::signal<void> &signal_lightshow_requested();
   sigc::signal<void> &signal_restart_requested();
   sigc::signal<void> &signal_done();
 
@@ -48,6 +51,7 @@ private:
   bool m_autoSensorOn = false;
   bool m_lightsOn = false;
   bool m_bluetoothOn = false;
+  bool m_lightShowOn = false;
 
   Gtk::Box m_centBox{Gtk::ORIENTATION_VERTICAL};
   Gtk::Box m_rowA{Gtk::ORIENTATION_HORIZONTAL};
@@ -60,6 +64,7 @@ private:
   ImageButton *m_editThemeBtn = nullptr;
   ImageButton *m_editPatternBtn = nullptr;
   ImageButton *m_editTeamsBtn = nullptr;
+  ImageButton *m_lightShowBtn = nullptr;
   ImageButton *m_restartBtn = nullptr;
   ImageButton *m_okBtn = nullptr;
 
@@ -69,6 +74,7 @@ private:
   sigc::signal<void> m_signalEditThemeRequested;
   sigc::signal<void> m_signalEditPatternRequested;
   sigc::signal<void> m_signalEditTeamsRequested;
+  sigc::signal<void> m_signalLightShowRequested;
   sigc::signal<void> m_signalRestartRequested;
   sigc::signal<void> m_signalDone;
 };

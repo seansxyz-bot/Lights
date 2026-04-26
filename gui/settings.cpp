@@ -1,12 +1,24 @@
 #include "settings.h"
 
 #include "../storage/write.h"
+#include "../utils/buttonimagemaker.h"
 #include "../utils/logger.h"
 #include "imgbutton.h"
 
-Settings::Settings(const std::string &iconPath, Options &opt, bool bluetoothOn)
+namespace {
+std::string settingsPathFromIconPath(const std::string &iconPath) {
+  const auto pos = iconPath.rfind("/icons");
+  if (pos == std::string::npos)
+    return iconPath;
+  return iconPath.substr(0, pos);
+}
+} // namespace
+
+Settings::Settings(const std::string &iconPath, Options &opt, bool bluetoothOn,
+                   bool lightShowOn)
     : Gtk::Box(Gtk::ORIENTATION_VERTICAL), m_autoSensorOn(opt.sensor),
-      m_lightsOn(opt.on), m_bluetoothOn(bluetoothOn) {
+      m_lightsOn(opt.on), m_bluetoothOn(bluetoothOn),
+      m_lightShowOn(lightShowOn) {
 
   LOG_INFO() << "Settings ctor";
 
@@ -42,6 +54,10 @@ Settings::Settings(const std::string &iconPath, Options &opt, bool bluetoothOn)
       Gtk::manage(new ImageButton(iconPath + "/dp.png", SETTINGS_EDIT_SIZE));
   m_editTeamsBtn = Gtk::manage(
       new ImageButton(iconPath + "/editteams.png", SETTINGS_EDIT_SIZE));
+  m_lightShowBtn = Gtk::manage(new ImageButton(
+      ButtonImageMaker::create(settingsPathFromIconPath(iconPath), "LightShow",
+                               SETTINGS_EDIT_SIZE),
+      SETTINGS_EDIT_SIZE));
   m_restartBtn = Gtk::manage(
       new ImageButton(iconPath + "/restart.png", SETTINGS_RESTART_SIZE));
   m_okBtn =
@@ -58,6 +74,8 @@ Settings::Settings(const std::string &iconPath, Options &opt, bool bluetoothOn)
   m_rowB.pack_start(*m_editPatternBtn, Gtk::PACK_SHRINK);
   m_rowB.pack_start(*m_editTeamsBtn, Gtk::PACK_SHRINK);
 
+  m_lightShowBtn->set_sensitive(m_lightShowOn);
+  m_rowC.pack_start(*m_lightShowBtn, Gtk::PACK_SHRINK);
   m_rowC.pack_start(*m_restartBtn, Gtk::PACK_SHRINK);
 
   m_centBox.pack_start(m_rowA, Gtk::PACK_SHRINK);
@@ -91,6 +109,9 @@ Settings::Settings(const std::string &iconPath, Options &opt, bool bluetoothOn)
   m_editTeamsBtn->signal_clicked().connect(
       [this]() { m_signalEditTeamsRequested.emit(); });
 
+  m_lightShowBtn->signal_clicked().connect(
+      [this]() { m_signalLightShowRequested.emit(); });
+
   m_restartBtn->signal_clicked().connect(
       [this]() { m_signalRestartRequested.emit(); });
 
@@ -107,6 +128,12 @@ void Settings::set_restart_enabled(bool enabled) {
 void Settings::set_bluetooth_enabled(bool enabled) {
   if (m_bluetoothBtn)
     m_bluetoothBtn->set_sensitive(enabled);
+}
+
+void Settings::set_lightshow_enabled(bool enabled) {
+  m_lightShowOn = enabled;
+  if (m_lightShowBtn)
+    m_lightShowBtn->set_sensitive(enabled);
 }
 
 sigc::signal<void, bool> &Settings::signal_auto_sensor_toggled() {
@@ -131,6 +158,10 @@ sigc::signal<void> &Settings::signal_edit_pattern_requested() {
 
 sigc::signal<void> &Settings::signal_edit_teams_requested() {
   return m_signalEditTeamsRequested;
+}
+
+sigc::signal<void> &Settings::signal_lightshow_requested() {
+  return m_signalLightShowRequested;
 }
 
 sigc::signal<void> &Settings::signal_restart_requested() {

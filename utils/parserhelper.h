@@ -1,6 +1,7 @@
 #pragma once
 
 #include <curl/curl.h>
+#include <map>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
@@ -46,16 +47,6 @@ public:
   static std::string parserFilePath(const std::string &settingsPath,
                                     const std::string &parserName);
 
-  // static bool parseNextGameJson(const std::string &jsonText,
-  //                               const ParserConfig &config, GameInfo &game);
-
-private:
-  static std::string getStringByPath(const nlohmann::json &j,
-                                     const std::string &path);
-
-  static int getIntByPath(const nlohmann::json &j, const std::string &path,
-                          int fallback = 0);
-
   bool loadParserConfig(const std::string &settingsPath,
                         const std::string &parserName, ParserConfig &outConfig);
 
@@ -66,4 +57,15 @@ private:
 
   bool parseLiveGameJson(const std::string &payload, const ParserConfig &cfg,
                          ParsedLiveGame &outGame, std::string &error);
+
+  static std::string getStringByPath(const nlohmann::json &j,
+                                     const std::string &path);
+
+  static int getIntByPath(const nlohmann::json &j, const std::string &path,
+                          int fallback = 0);
+
+private:
+  static const nlohmann::json *selectRootItem(const nlohmann::json &j,
+                                              const ParserConfig &cfg,
+                                              std::string &error);
 };

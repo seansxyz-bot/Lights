@@ -53,12 +53,17 @@ EditTeam::EditTeam(const std::string &iconPath, const std::string &teamsDbPath,
   m_nameEntry.set_text(m_team.name);
   m_leagueEntry.set_text(m_team.league);
   m_teamCodeEntry.set_text(m_team.teamCode);
+  m_homeAwayEntry.set_text(m_team.homeAway.empty() ? "home" : m_team.homeAway);
   m_nextGameUrlEntry.set_text(m_team.nextGameUrlTemplate);
   m_nextGameParserEntry.set_text(m_team.nextGameParser);
   m_liveGameUrlEntry.set_text(m_team.liveGameUrlTemplate);
   m_liveGameParserEntry.set_text(m_team.liveGameParser);
   m_apiTeamIdEntry.set_text(m_team.apiTeamId);
   m_themeNameEntry.set_text(m_team.themeName);
+  m_themeIdEntry.set_text(std::to_string(m_team.themeID));
+  m_iconPathEntry.set_text(m_team.iconPath);
+  m_displayOrderEntry.set_text(std::to_string(m_team.displayOrder));
+  m_enabledCheck.set_active(m_team.enabled != 0);
 
   m_color1Entry.set_max_length(6);
   m_color2Entry.set_max_length(6);
@@ -100,6 +105,18 @@ EditTeam::EditTeam(const std::string &iconPath, const std::string &teamsDbPath,
   m_grid.attach(*make_label("Team Code"), 0, row, 1, 1);
   m_grid.attach(m_teamCodeEntry, 1, row++, 1, 1);
 
+  m_grid.attach(*make_label("Home/Away"), 0, row, 1, 1);
+  m_grid.attach(m_homeAwayEntry, 1, row++, 1, 1);
+
+  m_grid.attach(*make_label("API Team ID"), 0, row, 1, 1);
+  m_grid.attach(m_apiTeamIdEntry, 1, row++, 1, 1);
+
+  m_grid.attach(*make_label("Enabled"), 0, row, 1, 1);
+  m_grid.attach(m_enabledCheck, 1, row++, 1, 1);
+
+  m_grid.attach(*make_label("Display Order"), 0, row, 1, 1);
+  m_grid.attach(m_displayOrderEntry, 1, row++, 1, 1);
+
   m_grid.attach(*make_label("Next Game URL"), 0, row, 1, 1);
   m_grid.attach(m_nextGameUrlEntry, 1, row++, 1, 1);
 
@@ -112,11 +129,26 @@ EditTeam::EditTeam(const std::string &iconPath, const std::string &teamsDbPath,
   m_grid.attach(*make_label("Live Game Parser"), 0, row, 1, 1);
   m_grid.attach(m_liveGameParserEntry, 1, row++, 1, 1);
 
-  m_grid.attach(*make_label("API Team ID"), 0, row, 1, 1);
-  m_grid.attach(m_apiTeamIdEntry, 1, row++, 1, 1);
-
   m_grid.attach(*make_label("Theme Name"), 0, row, 1, 1);
   m_grid.attach(m_themeNameEntry, 1, row++, 1, 1);
+
+  m_grid.attach(*make_label("Theme ID"), 0, row, 1, 1);
+  m_grid.attach(m_themeIdEntry, 1, row++, 1, 1);
+
+  m_grid.attach(*make_label("Icon Path"), 0, row, 1, 1);
+  m_grid.attach(m_iconPathEntry, 1, row++, 1, 1);
+
+  m_grid.attach(*make_label("Game Day Anim"), 0, row, 1, 1);
+  m_grid.attach(m_gameDayAnimationsEntry, 1, row++, 1, 1);
+
+  m_grid.attach(*make_label("Score Anim"), 0, row, 1, 1);
+  m_grid.attach(m_homeScoreAnimationsEntry, 1, row++, 1, 1);
+
+  m_grid.attach(*make_label("Blowout Anim"), 0, row, 1, 1);
+  m_grid.attach(m_blowoutAnimationsEntry, 1, row++, 1, 1);
+
+  m_grid.attach(*make_label("Lopsided Anim"), 0, row, 1, 1);
+  m_grid.attach(m_lopsidedAnimationsEntry, 1, row++, 1, 1);
 
   m_grid.attach(*make_label("Color 1"), 0, row, 1, 1);
   m_grid.attach(*make_hex_entry_row(m_color1Entry), 1, row++, 1, 1);
@@ -135,6 +167,12 @@ EditTeam::EditTeam(const std::string &iconPath, const std::string &teamsDbPath,
 
   m_logoUrlEntry.set_hexpand(true);
   m_logoUrlEntry.set_width_chars(28);
+  m_nextGameUrlEntry.set_width_chars(28);
+  m_liveGameUrlEntry.set_width_chars(28);
+  m_gameDayAnimationsEntry.set_width_chars(28);
+  m_homeScoreAnimationsEntry.set_width_chars(28);
+  m_blowoutAnimationsEntry.set_width_chars(28);
+  m_lopsidedAnimationsEntry.set_width_chars(28);
 
   m_logoPreviewBox.set_spacing(10);
   m_logoPreviewBox.set_border_width(8);
@@ -191,23 +229,33 @@ EditTeam::EditTeam(const std::string &iconPath, const std::string &teamsDbPath,
 
   m_okBtn =
       Gtk::manage(new ImageButton(m_iconPath + "/ok.png", EDITTEAM_OK_SIZE));
+  m_deleteBtn = Gtk::manage(
+      new ImageButton(m_iconPath + "/trash.png", EDITTEAM_DELETE_LOGO_SIZE));
   m_cancelBtn = Gtk::manage(
       new ImageButton(m_iconPath + "/cancel.png", EDITTEAM_CANCEL_SIZE));
 
   m_buttonBox.set_spacing(EDITTEAM_BUTTON_SPACING);
   m_buttonBox.set_halign(Gtk::ALIGN_CENTER);
   m_buttonBox.pack_start(*m_okBtn, Gtk::PACK_SHRINK);
+  if (m_team.id > 0)
+    m_buttonBox.pack_start(*m_deleteBtn, Gtk::PACK_SHRINK);
   m_buttonBox.pack_start(*m_cancelBtn, Gtk::PACK_SHRINK);
 
   pack_start(m_bodyBox, Gtk::PACK_SHRINK);
   pack_start(m_buttonBox, Gtk::PACK_SHRINK);
 
   m_okBtn->signal_clicked().connect([this]() { on_save(); });
+  m_deleteBtn->signal_clicked().connect([this]() {
+    if (m_team.id > 0 && deleteTeam(m_teamsDbPath, m_team.id))
+      m_signalDeleted.emit();
+  });
   m_cancelBtn->signal_clicked().connect([this]() { m_signalCancel.emit(); });
 
   m_deleteLogoBtn->signal_clicked().connect([this]() { clearLogoPreview(); });
 
   m_logoUrlEntry.signal_changed().connect([this]() { onLogoUrlChanged(); });
+
+  loadAnimationEntries();
 
   show_all_children();
 }
@@ -486,6 +534,7 @@ void EditTeam::on_save() {
   m_team.name = m_nameEntry.get_text();
   m_team.league = m_leagueEntry.get_text();
   m_team.teamCode = m_teamCodeEntry.get_text();
+  m_team.homeAway = m_homeAwayEntry.get_text();
   m_team.nextGameUrlTemplate = m_nextGameUrlEntry.get_text();
   m_team.nextGameParser =
       normalizeParserFileName(m_nextGameParserEntry.get_text());
@@ -494,16 +543,37 @@ void EditTeam::on_save() {
       normalizeParserFileName(m_liveGameParserEntry.get_text());
   m_team.apiTeamId = m_apiTeamIdEntry.get_text();
   m_team.themeName = m_themeNameEntry.get_text();
-  m_team.enabled = 1;
+  m_team.iconPath = m_iconPathEntry.get_text();
+  m_team.enabled = m_enabledCheck.get_active() ? 1 : 0;
 
-  // const bool teamOk = writeTeam(m_teamsDbPath, m_team);
-  const bool colorsOk = saveThemeColorsByThemeName(
-      m_team.themeName, m_color1Entry.get_text(), m_color2Entry.get_text());
+  try {
+    m_team.themeID = std::stoi(m_themeIdEntry.get_text());
+  } catch (...) {
+    m_team.themeID = 0;
+  }
+
+  try {
+    m_team.displayOrder = std::stoi(m_displayOrderEntry.get_text());
+  } catch (...) {
+    m_team.displayOrder = 0;
+  }
+
+  const bool teamOk = writeTeam(m_teamsDbPath, m_team);
+  const bool animOk = teamOk && writeTeamAnimations(m_teamsDbPath, m_team.id,
+                                                    collectAnimations());
+  const bool hasThemeColors = !m_team.themeName.empty() &&
+                              !m_color1Entry.get_text().empty() &&
+                              !m_color2Entry.get_text().empty();
+  const bool colorsOk =
+      hasThemeColors ? saveThemeColorsByThemeName(m_team.themeName,
+                                                  m_color1Entry.get_text(),
+                                                  m_color2Entry.get_text())
+                     : true;
   const bool logoOk = !m_logoUrlEntry.get_text().empty()
                           ? saveLogoFromUrl(m_logoUrlEntry.get_text())
                           : saveLogoPreviewToDisk();
 
-  if (/*teamOk &&*/ colorsOk && logoOk) {
+  if (teamOk && animOk && colorsOk && logoOk) {
     if (!m_logoUrlEntry.get_text().empty() && !logoOk) {
       LOG_WARN()
           << "Team saved, colors saved, preview saved, logo URL save failed";
@@ -560,59 +630,16 @@ bool EditTeam::validateFields(std::string &message) const {
     return false;
   }
 
-  if (trim(m_nextGameUrlEntry.get_text()).empty()) {
-    message = "Next Game URL needs to be filled in.";
-    return false;
-  }
-
-  if (trim(m_nextGameParserEntry.get_text()).empty()) {
-    message = "Next Game Parser needs to be filled in.";
-    return false;
-  }
-
-  if (trim(m_liveGameUrlEntry.get_text()).empty()) {
-    message = "Live Game URL needs to be filled in.";
-    return false;
-  }
-
-  if (trim(m_liveGameParserEntry.get_text()).empty()) {
-    message = "Live Game Parser needs to be filled in.";
-    return false;
-  }
-
-  if (trim(m_apiTeamIdEntry.get_text()).empty()) {
-    message = "API Team ID needs to be filled in.";
-    return false;
-  }
-
-  if (trim(m_themeNameEntry.get_text()).empty()) {
-    message = "Theme Name needs to be filled in.";
-    return false;
-  }
-
-  if (trim(m_color1Entry.get_text()).empty()) {
-    message = "Color 1 needs to be filled in.";
-    return false;
-  }
-
-  if (trim(m_color2Entry.get_text()).empty()) {
-    message = "Color 2 needs to be filled in.";
-    return false;
-  }
-
-  if (trim(m_logoUrlEntry.get_text()).empty() && !m_logoPixbuf) {
-    message = "Logo URL or pasted logo is required.";
-    return false;
-  }
-
   int dummyR = 0, dummyG = 0, dummyB = 0;
 
-  if (!hexToRgb(m_color1Entry.get_text(), dummyR, dummyG, dummyB)) {
+  if (!trim(m_color1Entry.get_text()).empty() &&
+      !hexToRgb(m_color1Entry.get_text(), dummyR, dummyG, dummyB)) {
     message = "Color 1 must be a valid 6-digit hex value.";
     return false;
   }
 
-  if (!hexToRgb(m_color2Entry.get_text(), dummyR, dummyG, dummyB)) {
+  if (!trim(m_color2Entry.get_text()).empty() &&
+      !hexToRgb(m_color2Entry.get_text(), dummyR, dummyG, dummyB)) {
     message = "Color 2 must be a valid 6-digit hex value.";
     return false;
   }
@@ -620,10 +647,82 @@ bool EditTeam::validateFields(std::string &message) const {
   return true;
 }
 
+std::vector<std::string>
+EditTeam::splitAnimationPaths(const std::string &text) {
+  std::vector<std::string> out;
+  std::stringstream ss(text);
+  std::string item;
+
+  while (std::getline(ss, item, ';')) {
+    const auto first = item.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos)
+      continue;
+
+    const auto last = item.find_last_not_of(" \t\r\n");
+    out.push_back(item.substr(first, last - first + 1));
+  }
+
+  return out;
+}
+
+std::string EditTeam::joinAnimationPaths(
+    const std::vector<TeamAnimation> &items, const std::string &type) {
+  std::string out;
+  for (const auto &a : items) {
+    if (a.animationType != type)
+      continue;
+
+    if (!out.empty())
+      out += "; ";
+    out += a.filePath;
+  }
+  return out;
+}
+
+std::vector<TeamAnimation> EditTeam::collectAnimations() const {
+  std::vector<TeamAnimation> out;
+
+  const auto addType = [&](const std::string &type, const std::string &text) {
+    const auto paths = splitAnimationPaths(text);
+    int order = 0;
+    for (const auto &path : paths) {
+      TeamAnimation a;
+      a.teamId = m_team.id;
+      a.animationType = type;
+      a.filePath = path;
+      a.enabled = 1;
+      a.displayOrder = order++;
+      out.push_back(a);
+    }
+  };
+
+  addType("game_day_hourly", m_gameDayAnimationsEntry.get_text());
+  addType("home_score", m_homeScoreAnimationsEntry.get_text());
+  addType("blowout", m_blowoutAnimationsEntry.get_text());
+  addType("lopsided", m_lopsidedAnimationsEntry.get_text());
+  return out;
+}
+
+void EditTeam::loadAnimationEntries() {
+  if (m_team.id <= 0)
+    return;
+
+  const auto animations = readTeamAnimations(m_teamsDbPath, m_team.id);
+  m_gameDayAnimationsEntry.set_text(
+      joinAnimationPaths(animations, "game_day_hourly"));
+  m_homeScoreAnimationsEntry.set_text(
+      joinAnimationPaths(animations, "home_score"));
+  m_blowoutAnimationsEntry.set_text(joinAnimationPaths(animations, "blowout"));
+  m_lopsidedAnimationsEntry.set_text(
+      joinAnimationPaths(animations, "lopsided"));
+}
+
 sigc::signal<void, std::string> &EditTeam::signal_validation_failed() {
   return m_signalValidationFailed;
 }
 
 sigc::signal<void> &EditTeam::signal_saved() { return m_signalSaved; }
+
+sigc::signal<void> &EditTeam::signal_deleted() { return m_signalDeleted; }
 
 sigc::signal<void> &EditTeam::signal_cancel() { return m_signalCancel; }

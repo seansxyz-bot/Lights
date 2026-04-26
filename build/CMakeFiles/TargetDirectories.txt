@@ -1,0 +1,3 @@
+/home/dev/Documents/LightingControl/LightController/build/CMakeFiles/LightingControl.dir
+/home/dev/Documents/LightingControl/LightController/build/CMakeFiles/edit_cache.dir
+/home/dev/Documents/LightingControl/LightController/build/CMakeFiles/rebuild_cache.dir

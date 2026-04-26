@@ -64,6 +64,7 @@ set(SOURCES
     gui/home.h
     gui/imgbutton.h
     gui/keypad.h
+    gui/lightshowsettings.h
     gui/patterns.h
     gui/settings.h
     gui/teamlist.h
@@ -80,7 +81,6 @@ set(SOURCES
 
     threads/clockthread.h
     threads/doorbellthread.h
-    threads/gamethread.h
     threads/mobilelightspoller.h
 
     utils/buttonimagemaker.h
@@ -114,6 +114,7 @@ set(SOURCES
     gui/editthemes.cpp
     gui/editteam.cpp
     gui/home.cpp
+    gui/lightshowsettings.cpp
     gui/patterns.cpp
     gui/settings.cpp
     gui/teamlist.cpp
@@ -129,8 +130,8 @@ set(SOURCES
 
     threads/clockthread.cpp
     threads/doorbellthread.cpp
-    threads/gamethread.cpp
     threads/mobilelightspoller.cpp
+    threads/sportspoller.cpp
 
     utils/parserhelper.cpp
 )

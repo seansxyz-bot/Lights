@@ -222,6 +222,8 @@ std::vector<Theme> readThemeColors(const std::string &path) {
 
 std::vector<TeamRecord> readTeams(const std::string &dbPath) {
   std::vector<TeamRecord> teams;
+  ensureSportsSchema(dbPath);
+
   sqlite3 *db = nullptr;
 
   if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
@@ -232,9 +234,12 @@ std::vector<TeamRecord> readTeams(const std::string &dbPath) {
 
   const char *sql =
       "SELECT id, name, league, team_code, "
+      "home_away, "
       "next_game_url_template, next_game_parser, "
       "live_game_url_template, live_game_parser, "
-      "api_team_id, enabled, display_order, theme_name, next_game_utc "
+      "api_team_id, enabled, display_order, theme_name, theme_id, icon_path, "
+      "next_game_utc, last_home_score, last_away_score, last_game_id, "
+      "last_checked_utc "
       "FROM teams "
       "ORDER BY display_order, name;";
 
@@ -248,20 +253,26 @@ std::vector<TeamRecord> readTeams(const std::string &dbPath) {
       const unsigned char *nameText = sqlite3_column_text(stmt, 1);
       const unsigned char *leagueText = sqlite3_column_text(stmt, 2);
       const unsigned char *teamCodeText = sqlite3_column_text(stmt, 3);
+      const unsigned char *homeAwayText = sqlite3_column_text(stmt, 4);
       const unsigned char *nextGameUrlTemplateText =
-          sqlite3_column_text(stmt, 4);
-      const unsigned char *nextGameParserText = sqlite3_column_text(stmt, 5);
+          sqlite3_column_text(stmt, 5);
+      const unsigned char *nextGameParserText = sqlite3_column_text(stmt, 6);
       const unsigned char *liveGameUrlTemplateText =
-          sqlite3_column_text(stmt, 6);
-      const unsigned char *liveGameParserText = sqlite3_column_text(stmt, 7);
-      const unsigned char *apiTeamIdText = sqlite3_column_text(stmt, 8);
-      const unsigned char *themeNameText = sqlite3_column_text(stmt, 11);
-      const unsigned char *nextGameUtcText = sqlite3_column_text(stmt, 12);
+          sqlite3_column_text(stmt, 7);
+      const unsigned char *liveGameParserText = sqlite3_column_text(stmt, 8);
+      const unsigned char *apiTeamIdText = sqlite3_column_text(stmt, 9);
+      const unsigned char *themeNameText = sqlite3_column_text(stmt, 12);
+      const unsigned char *iconPathText = sqlite3_column_text(stmt, 14);
+      const unsigned char *nextGameUtcText = sqlite3_column_text(stmt, 15);
+      const unsigned char *lastGameIdText = sqlite3_column_text(stmt, 18);
+      const unsigned char *lastCheckedUtcText = sqlite3_column_text(stmt, 19);
 
       t.name = nameText ? reinterpret_cast<const char *>(nameText) : "";
       t.league = leagueText ? reinterpret_cast<const char *>(leagueText) : "";
       t.teamCode =
           teamCodeText ? reinterpret_cast<const char *>(teamCodeText) : "";
+      t.homeAway =
+          homeAwayText ? reinterpret_cast<const char *>(homeAwayText) : "home";
       t.nextGameUrlTemplate =
           nextGameUrlTemplateText
               ? reinterpret_cast<const char *>(nextGameUrlTemplateText)
@@ -280,13 +291,23 @@ std::vector<TeamRecord> readTeams(const std::string &dbPath) {
               : "";
       t.apiTeamId =
           apiTeamIdText ? reinterpret_cast<const char *>(apiTeamIdText) : "";
-      t.enabled = sqlite3_column_int(stmt, 9);
-      t.displayOrder = sqlite3_column_int(stmt, 10);
+      t.enabled = sqlite3_column_int(stmt, 10);
+      t.displayOrder = sqlite3_column_int(stmt, 11);
       t.themeName =
           themeNameText ? reinterpret_cast<const char *>(themeNameText) : "";
+      t.themeID = sqlite3_column_int(stmt, 13);
+      t.iconPath =
+          iconPathText ? reinterpret_cast<const char *>(iconPathText) : "";
       t.nextGameUtc = nextGameUtcText
                           ? reinterpret_cast<const char *>(nextGameUtcText)
                           : "";
+      t.lastHomeScore = sqlite3_column_int(stmt, 16);
+      t.lastAwayScore = sqlite3_column_int(stmt, 17);
+      t.lastGameId =
+          lastGameIdText ? reinterpret_cast<const char *>(lastGameIdText) : "";
+      t.lastCheckedUtc = lastCheckedUtcText
+                             ? reinterpret_cast<const char *>(lastCheckedUtcText)
+                             : "";
 
       teams.push_back(t);
     }
@@ -296,6 +317,66 @@ std::vector<TeamRecord> readTeams(const std::string &dbPath) {
     sqlite3_finalize(stmt);
   sqlite3_close(db);
   return teams;
+}
+
+std::vector<TeamAnimation> readTeamAnimations(const std::string &dbPath,
+                                              int teamId) {
+  std::vector<TeamAnimation> animations;
+  ensureSportsSchema(dbPath);
+
+  sqlite3 *db = nullptr;
+  if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
+    if (db)
+      sqlite3_close(db);
+    return animations;
+  }
+
+  const char *sql = R"(
+    SELECT id, team_id, animation_type, file_path, enabled, display_order
+    FROM team_animations
+    WHERE team_id = ?
+    ORDER BY animation_type, display_order, id;
+  )";
+
+  sqlite3_stmt *stmt = nullptr;
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+    sqlite3_bind_int(stmt, 1, teamId);
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+      TeamAnimation a;
+      a.id = sqlite3_column_int(stmt, 0);
+      a.teamId = sqlite3_column_int(stmt, 1);
+
+      const unsigned char *typeText = sqlite3_column_text(stmt, 2);
+      const unsigned char *pathText = sqlite3_column_text(stmt, 3);
+
+      a.animationType =
+          typeText ? reinterpret_cast<const char *>(typeText) : "";
+      a.filePath = pathText ? reinterpret_cast<const char *>(pathText) : "";
+      a.enabled = sqlite3_column_int(stmt, 4);
+      a.displayOrder = sqlite3_column_int(stmt, 5);
+      animations.push_back(a);
+    }
+  }
+
+  if (stmt)
+    sqlite3_finalize(stmt);
+  sqlite3_close(db);
+  return animations;
+}
+
+std::vector<TeamAnimation>
+readTeamAnimationsByType(const std::string &dbPath, int teamId,
+                         const std::string &animationType) {
+  std::vector<TeamAnimation> out;
+  const auto all = readTeamAnimations(dbPath, teamId);
+
+  for (const auto &a : all) {
+    if (a.enabled && a.animationType == animationType && !a.filePath.empty())
+      out.push_back(a);
+  }
+
+  return out;
 }
 
 bool loadLedRestoreState(const std::string &dbPath,

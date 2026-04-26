@@ -57,7 +57,8 @@ TeamList::TeamList(const std::string &iconPath, const std::string &teamsDbPath)
 }
 
 void TeamList::reload() {
-  // m_teams = readTeams(m_teamsDbPath);
+  ensureSportsSchema(m_teamsDbPath);
+  m_teams = readTeams(m_teamsDbPath);
   rebuild_rows();
   show_all_children();
 }
@@ -72,8 +73,15 @@ void TeamList::rebuild_rows() {
     row->set_spacing(TEAMLIST_ROWS_SPACING);
     row->set_halign(Gtk::ALIGN_CENTER);
 
-    auto label = Gtk::manage(new Gtk::Label(team.name));
+    std::string text = team.name;
+    if (!team.teamCode.empty())
+      text += " (" + team.teamCode + ")";
+    if (!team.enabled)
+      text += " [off]";
+
+    auto label = Gtk::manage(new Gtk::Label(text));
     label->set_xalign(0.0f);
+    label->set_size_request(TEAMLIST_LABEL_WIDTH, -1);
 
     auto editBtn = Gtk::manage(
         new ImageButton(m_iconPath + "/settings.png", TEAMLIST_EDIT_SIZE));

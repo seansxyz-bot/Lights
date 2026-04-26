@@ -25,7 +25,7 @@ public:
 
   std::string lastError() const;
 
-  sigc::signal<void, Reading> signal_environment_changed();
+  sigc::signal<void, Reading> &signal_environment_changed();
 
 private:
   void run();

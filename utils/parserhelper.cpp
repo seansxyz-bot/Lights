@@ -64,20 +64,18 @@ bool ParserHelper::loadParserConfig(const std::string &settingsPath,
     }
 
     const auto &fields = j.at("fields");
-    // config.fieldId = fields.value("id", "");
-    // config.fieldGameState = fields.value("gameState", "");
-    // config.fieldDateTimeUTC = fields.value("dateTimeUTC", "");
-    // config.fieldHome = fields.value("home", "");
-    // config.fieldAway = fields.value("away", "");
-    // config.fieldScoreHome = fields.value("scoreHome", "");
-    // config.fieldScoreAway = fields.value("scoreAway", "");
+    config.fields.clear();
+    for (auto it = fields.begin(); it != fields.end(); ++it) {
+      if (it.value().is_string())
+        config.fields[it.key()] = it.value().get<std::string>();
+    }
 
     if (config.type != "json") {
       LOG_ERROR() << "Unsupported parser type: " << config.type;
       return false;
     }
 
-    if (config.mode != "next_game") {
+    if (config.mode != "next_game" && config.mode != "live_game") {
       LOG_ERROR() << "Unsupported parser mode: " << config.mode;
       return false;
     }
@@ -125,10 +123,21 @@ std::string ParserHelper::getStringByPath(const nlohmann::json &j,
   std::string token;
 
   while (std::getline(ss, token, '.')) {
-    if (!cur->is_object() || !cur->contains(token))
-      return "";
+    if (cur->is_array()) {
+      try {
+        const size_t idx = static_cast<size_t>(std::stoul(token));
+        if (idx >= cur->size())
+          return "";
+        cur = &((*cur)[idx]);
+      } catch (...) {
+        return "";
+      }
+    } else {
+      if (!cur->is_object() || !cur->contains(token))
+        return "";
 
-    cur = &((*cur)[token]);
+      cur = &((*cur)[token]);
+    }
   }
 
   if (cur->is_string())
@@ -159,10 +168,21 @@ int ParserHelper::getIntByPath(const nlohmann::json &j, const std::string &path,
   std::string token;
 
   while (std::getline(ss, token, '.')) {
-    if (!cur->is_object() || !cur->contains(token))
-      return fallback;
+    if (cur->is_array()) {
+      try {
+        const size_t idx = static_cast<size_t>(std::stoul(token));
+        if (idx >= cur->size())
+          return fallback;
+        cur = &((*cur)[idx]);
+      } catch (...) {
+        return fallback;
+      }
+    } else {
+      if (!cur->is_object() || !cur->contains(token))
+        return fallback;
 
-    cur = &((*cur)[token]);
+      cur = &((*cur)[token]);
+    }
   }
 
   if (cur->is_number_integer())
@@ -182,54 +202,172 @@ int ParserHelper::getIntByPath(const nlohmann::json &j, const std::string &path,
   return fallback;
 }
 
-// bool ParserHelper::parseNextGameJson(const std::string &jsonText,
-//                                      const ParserConfig &config,
-//                                      GameInfo &game) {
-//   try {
-//     const auto j = nlohmann::json::parse(jsonText);
+bool ParserHelper::validateParserConfig(const ParserConfig &cfg,
+                                        std::string &error) {
+  if (cfg.type != "json") {
+    error = "Unsupported parser type: " + cfg.type;
+    return false;
+  }
 
-//     if (!j.contains(config.root) || !j.at(config.root).is_array()) {
-//       LOG_ERROR() << "Root array not found or not array: " << config.root;
-//       return false;
-//     }
+  if (cfg.mode != "next_game" && cfg.mode != "live_game") {
+    error = "Unsupported parser mode: " + cfg.mode;
+    return false;
+  }
 
-//     const auto &arr = j.at(config.root);
-//     if (arr.empty()) {
-//       LOG_WARN() << "Parser root array is empty: " << config.root;
-//       return false;
-//     }
+  if (cfg.root.empty()) {
+    error = "Parser root is empty";
+    return false;
+  }
 
-//     const nlohmann::json *item = nullptr;
+  const auto requireField = [&](const std::string &field) {
+    return cfg.fields.find(field) != cfg.fields.end() &&
+           !cfg.fields.at(field).empty();
+  };
 
-//     if (config.select == "first") {
-//       item = &arr.at(0);
-//     } else {
-//       LOG_ERROR() << "Unsupported parser select mode: " << config.select;
-//       return false;
-//     }
+  if (!requireField("id") || !requireField("dateTimeUTC") ||
+      !requireField("home") || !requireField("away")) {
+    error = "Parser needs id, dateTimeUTC, home, and away fields";
+    return false;
+  }
 
-//     if (!item || !item->is_object()) {
-//       LOG_ERROR() << "Selected parser item is invalid";
-//       return false;
-//     }
+  if (cfg.mode == "live_game" &&
+      (!requireField("scoreHome") || !requireField("scoreAway"))) {
+    error = "Live parser needs scoreHome and scoreAway fields";
+    return false;
+  }
 
-//     game = GameInfo{};
-//     // game.id = getIntByPath(*item, config.fieldId);
-//     // game.gameState = getStringByPath(*item, config.fieldGameState);
-//     // game.dateTimeUTC = getStringByPath(*item, config.fieldDateTimeUTC);
-//     // game.home = getStringByPath(*item, config.fieldHome);
-//     // game.away = getStringByPath(*item, config.fieldAway);
-//     // game.scoreHome = getIntByPath(*item, config.fieldScoreHome, 0);
-//     // game.scoreAway = getIntByPath(*item, config.fieldScoreAway, 0);
+  return true;
+}
 
-//     if (game.dateTimeUTC.empty()) {
-//       LOG_ERROR() << "Parsed game missing dateTimeUTC";
-//       return false;
-//     }
+const nlohmann::json *ParserHelper::selectRootItem(const nlohmann::json &j,
+                                                   const ParserConfig &cfg,
+                                                   std::string &error) {
+  const nlohmann::json *root = &j;
 
-//     return true;
-//   } catch (const std::exception &e) {
-//     LOG_ERROR() << "parseNextGameJson failed: " << e.what();
-//     return false;
-//   }
-// }
+  if (!cfg.root.empty()) {
+    const std::string rootToken = cfg.root;
+    root = &j;
+    std::stringstream ss(rootToken);
+    std::string token;
+
+    while (std::getline(ss, token, '.')) {
+      if (root->is_array()) {
+        try {
+          const size_t idx = static_cast<size_t>(std::stoul(token));
+          if (idx >= root->size()) {
+            error = "Root array index out of range: " + token;
+            return nullptr;
+          }
+          root = &((*root)[idx]);
+        } catch (...) {
+          error = "Root array needs numeric index: " + token;
+          return nullptr;
+        }
+      } else {
+        if (!root->is_object() || !root->contains(token)) {
+          error = "Parser root not found: " + cfg.root;
+          return nullptr;
+        }
+        root = &((*root)[token]);
+      }
+    }
+  }
+
+  if (root->is_array()) {
+    if (root->empty()) {
+      error = "Parser root array is empty";
+      return nullptr;
+    }
+
+    if (cfg.select.empty() || cfg.select == "first")
+      return &root->at(0);
+
+    error = "Unsupported parser select: " + cfg.select;
+    return nullptr;
+  }
+
+  if (!root->is_object()) {
+    error = "Parser root did not resolve to an object";
+    return nullptr;
+  }
+
+  return root;
+}
+
+bool ParserHelper::parseNextGameJson(const std::string &payload,
+                                     const ParserConfig &cfg,
+                                     ParsedNextGame &outGame,
+                                     std::string &error) {
+  outGame = ParsedNextGame{};
+  if (!validateParserConfig(cfg, error))
+    return false;
+
+  try {
+    const auto j = nlohmann::json::parse(payload);
+    const nlohmann::json *item = selectRootItem(j, cfg, error);
+    if (!item)
+      return false;
+
+    const auto field = [&](const std::string &name) -> std::string {
+      auto it = cfg.fields.find(name);
+      return it == cfg.fields.end() ? "" : it->second;
+    };
+
+    outGame.id = getStringByPath(*item, field("id"));
+    outGame.state = getStringByPath(*item, field("gameState"));
+    outGame.dateUtc = getStringByPath(*item, field("dateTimeUTC"));
+    outGame.homeTeam = getStringByPath(*item, field("home"));
+    outGame.awayTeam = getStringByPath(*item, field("away"));
+    outGame.homeScore = getIntByPath(*item, field("scoreHome"), 0);
+    outGame.awayScore = getIntByPath(*item, field("scoreAway"), 0);
+
+    outGame.valid = !outGame.id.empty() && !outGame.dateUtc.empty();
+    if (!outGame.valid)
+      error = "Parsed next game missing id or dateTimeUTC";
+
+    return outGame.valid;
+  } catch (const std::exception &e) {
+    error = e.what();
+    return false;
+  }
+}
+
+bool ParserHelper::parseLiveGameJson(const std::string &payload,
+                                     const ParserConfig &cfg,
+                                     ParsedLiveGame &outGame,
+                                     std::string &error) {
+  outGame = ParsedLiveGame{};
+  if (!validateParserConfig(cfg, error))
+    return false;
+
+  try {
+    const auto j = nlohmann::json::parse(payload);
+    const nlohmann::json *item = selectRootItem(j, cfg, error);
+    if (!item)
+      return false;
+
+    const auto field = [&](const std::string &name) -> std::string {
+      auto it = cfg.fields.find(name);
+      return it == cfg.fields.end() ? "" : it->second;
+    };
+
+    outGame.id = getStringByPath(*item, field("id"));
+    outGame.state = getStringByPath(*item, field("gameState"));
+    outGame.dateUtc = getStringByPath(*item, field("dateTimeUTC"));
+    outGame.homeTeam = getStringByPath(*item, field("home"));
+    outGame.awayTeam = getStringByPath(*item, field("away"));
+    outGame.homeScore = getIntByPath(*item, field("scoreHome"), 0);
+    outGame.awayScore = getIntByPath(*item, field("scoreAway"), 0);
+    outGame.period = getStringByPath(*item, field("period"));
+    outGame.clock = getStringByPath(*item, field("clock"));
+
+    outGame.valid = !outGame.id.empty();
+    if (!outGame.valid)
+      error = "Parsed live game missing id";
+
+    return outGame.valid;
+  } catch (const std::exception &e) {
+    error = e.what();
+    return false;
+  }
+}

@@ -30,6 +30,7 @@ struct TeamRecord {
   std::string name;
   std::string league;
   std::string teamCode;
+  std::string homeAway;
   std::string nextGameUrlTemplate;
   std::string nextGameParser;
   std::string liveGameUrlTemplate;
@@ -38,10 +39,25 @@ struct TeamRecord {
   int enabled = 1;
   int displayOrder = 0;
   std::string themeName;
+  int themeID = 0;
+  std::string iconPath;
   std::string nextGameUtc;
   Glib::RefPtr<Gdk::Pixbuf> logo;
   Gdk::RGBA c1;
   Gdk::RGBA c2;
+  int lastHomeScore = -1;
+  int lastAwayScore = -1;
+  std::string lastGameId;
+  std::string lastCheckedUtc;
+};
+
+struct TeamAnimation {
+  int id = 0;
+  int teamId = 0;
+  std::string animationType;
+  std::string filePath;
+  int enabled = 1;
+  int displayOrder = 0;
 };
 
 struct TeamStats {

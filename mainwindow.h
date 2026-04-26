@@ -20,6 +20,7 @@
 #include "gui/editteam.h"
 #include "gui/editthemepage.h"
 #include "gui/editthemes.h"
+#include "gui/lightshowsettings.h"
 #include "gui/settings.h"
 #include "gui/teamlist.h"
 #include "gui/themes.h"
@@ -28,6 +29,7 @@
 #include "threads/environmentthread.h"
 #include "threads/lightsensorthread.h"
 #include "threads/mobilelightspoller.h"
+#include "threads/sportspoller.h"
 #include "utils/parserhelper.h"
 #include <atomic>
 #include <gtkmm.h>
@@ -46,8 +48,7 @@ class Engine;
 class EditThemes;
 class EditThemePage;
 class EditPattern;
-
-enum class LedOverrideMode { None, Theme, LightShow };
+class LightShowSettingsPage;
 
 class MainWindow : public Gtk::Window {
 public:
@@ -58,6 +59,8 @@ private:
   void updateLightShowState();
   void startLightShow();
   void stopLightShow();
+  bool setLightsPowerEnabled(bool enabled);
+  bool waitForTeensyReady();
 
 private:
   std::atomic<bool> m_shuttingDown{false};
@@ -75,6 +78,7 @@ private:
 
   std::unique_ptr<LightShow> m_lightShow;
   bool m_lightShowRunning = false;
+  bool m_sportsAnimationRunning = false;
 
   // ---------- app data ----------
   std::vector<LEDData> m_ledInfo;
@@ -82,8 +86,11 @@ private:
   std::vector<Schedule> m_schedule;
   std::vector<Theme> m_themes;
   std::vector<Pattern> m_pattern;
+  std::vector<TeamRecord> m_teams;
+  std::vector<TeamRecord> m_liveSportsTeams;
   TeensyClient m_teensyClient;
   std::string m_lastShortToastMessage;
+  bool m_lightsPowerEnabled = false;
 
   sigc::connection m_powerChangedConn;
   sigc::connection m_btPowerChangedConn;
@@ -98,6 +105,7 @@ private:
   BTControl m_btControl;
   BluezAgent m_bluezAgent;
   AmpSwitch m_ampSwitch;
+  std::atomic<bool> m_ampEnabled{false};
 
   // ---------- main shell ----------
   Gtk::Overlay m_overlay;
@@ -117,6 +125,7 @@ private:
   EditThemes *m_editThemesPage = nullptr;
   EditThemePage *m_editThemePage = nullptr;
   EditPattern *m_editPatternPage = nullptr;
+  LightShowSettingsPage *m_lightShowSettingsPage = nullptr;
   TeamList *m_teamList = nullptr;
   EditTeam *m_editTeam = nullptr;
 
@@ -145,18 +154,21 @@ private:
   LightSensorThread m_lightSensorThread;
   EnvironmentThread m_environmentThread;
   std::unique_ptr<MobileLightsPoller> m_mobileLightsPoller;
+  std::unique_ptr<DailySportsPoller> m_dailySportsPoller;
+  std::unique_ptr<LiveGamePoller> m_liveGamePoller;
 
   // ---------- app connections ----------
   sigc::connection m_themeConn;
   sigc::connection m_newHourConn;
   sigc::connection m_newMinuteConn;
   sigc::connection m_newYearConn;
-  sigc::connection m_scheduledEventConn;
   sigc::connection m_doorbellConn;
   sigc::connection m_lightSensorConn;
   sigc::connection m_environmentConn;
   sigc::connection m_bluetoothPollConn;
+  sigc::connection m_bluetoothEnableTimeoutConn;
   sigc::connection m_toastHideConn;
+  sigc::connection m_sportsAnimationTimeoutConn;
 
 private:
   // ---------- setup ----------
@@ -191,6 +203,7 @@ private:
   void showDeltaGroupPage();
   void showClockPage();
   void showGameDayPage();
+  void showLightShowSettingsPage();
 
   void destroyTemporaryPage(const std::string &pageName);
   void destroyAllTemporaryPages();
@@ -215,6 +228,18 @@ private:
   std::vector<Schedule> getActiveSportsSchedules();
   bool isGameDay(const std::string &date);
   std::string addHours(const std::string &time24, int hours);
+  void onSportsGamesChecked(std::vector<SportsNextGameEvent> events);
+  void onSportsLiveUpdate(SportsLiveEvent event);
+  void onSportsHomeScore(SportsLiveEvent event);
+  void onSportsGameFinished(SportsLiveEvent event);
+  void triggerSportsAnimation(const TeamRecord &team,
+                              const std::string &animationType,
+                              const GameInfo &gameInfo);
+  void triggerHourlyGameDayAnimation();
+  void refreshLiveSportsPoller();
+  int themeIdForTeam(const TeamRecord &team) const;
+  std::string chooseTeamAnimationPath(int teamId,
+                                      const std::string &animationType) const;
   void onDoorbellChanged(bool pressed);
   void onLightSensorChanged(bool sensorWantsLightsOn);
   void onEnvironmentChanged(EnvironmentThread::Reading reading);
@@ -231,6 +256,7 @@ private:
   void showEditThemesPage();
   void showEditThemePage(int themeId);
   void showEditPatternPage();
+  void applyLightShowControl(LightShowControl control, float value);
 
   void updateOptions(const Options &options);
   void updateScheduleEntry(int index, const Schedule &entry);

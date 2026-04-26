@@ -1,6 +1,7 @@
 #include "engine.h"
 
 #include <cmath>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 
@@ -20,6 +21,10 @@ Engine::Engine(const TeamRecord &teamRecord, const TeamStats &teamStats,
 
   // ES-style path.
   set_use_es(true);
+
+  m_animationType = m_teamRecord.nextGameParser;
+  m_animationPath = m_teamRecord.nextGameUrlTemplate;
+  loadAnimationFile(m_animationPath);
 
   reset_timing();
 }
@@ -103,7 +108,7 @@ bool Engine::on_timeout() {
 void Engine::update(double dt) {
   m_elapsedSeconds += dt;
 
-  m_cameraY = 1.2f + std::sin(m_elapsedSeconds * 0.8) * 0.15f;
+  m_cameraY = 1.2f + std::sin(m_elapsedSeconds * 2.4) * 0.20f;
 }
 
 bool Engine::on_render(const Glib::RefPtr<Gdk::GLContext> & /*context*/) {
@@ -128,9 +133,12 @@ void Engine::shutdown_gl() {
 }
 
 void Engine::render_frame(int width, int height) {
-  const float clearR = 0.08f;
-  const float clearG = 0.08f;
-  const float clearB = 0.10f;
+  const float pulse =
+      0.55f + 0.45f * std::sin(static_cast<float>(m_elapsedSeconds) * 7.0f);
+
+  const float clearR = 0.04f + m_secondaryColor.r * 0.18f * pulse;
+  const float clearG = 0.04f + m_secondaryColor.g * 0.18f * pulse;
+  const float clearB = 0.06f + m_secondaryColor.b * 0.18f * pulse;
 
   m_renderer.begin_frame(width, height, clearR, clearG, clearB, 1.0f);
 
@@ -144,17 +152,18 @@ void Engine::render_frame(int width, int height) {
 
   m_renderer.set_camera(eye, target, up, 60.0f, aspect, 0.1f, 100.0f);
 
-  const float spin = static_cast<float>(m_elapsedSeconds * 45.0);
+  const float spin = static_cast<float>(m_elapsedSeconds * 95.0);
+  const float scale = 1.45f + pulse * 0.65f;
 
   Renderer::Mat4 cubeModel = Renderer::Mat4::translation(0.0f, 0.0f, 0.0f) *
                              Renderer::Mat4::rotationY(spin) *
                              Renderer::Mat4::rotationX(spin * 0.6f) *
-                             Renderer::Mat4::scale(1.8f, 1.8f, 1.8f);
+                             Renderer::Mat4::scale(scale, scale, scale);
 
   Renderer::Color cubeColor{
-      0.2f,
-      0.7f,
-      1.0f,
+      std::min(1.0f, m_primaryColor.r * (0.55f + pulse)),
+      std::min(1.0f, m_primaryColor.g * (0.55f + pulse)),
+      std::min(1.0f, m_primaryColor.b * (0.55f + pulse)),
       1.0f,
   };
 
@@ -164,11 +173,49 @@ void Engine::render_frame(int width, int height) {
                               Renderer::Mat4::scale(10.0f, 10.0f, 1.0f);
 
   Renderer::Color floorColor{
-      0.2f,
-      0.2f,
-      0.25f,
+      m_secondaryColor.r,
+      m_secondaryColor.g,
+      m_secondaryColor.b,
       1.0f,
   };
 
   m_renderer.draw_plane_xz(floorModel, floorColor);
+}
+
+void Engine::loadAnimationFile(const std::string &path) {
+  if (path.empty())
+    return;
+
+  std::ifstream in(path);
+  if (!in.is_open())
+    return;
+
+  std::string line;
+  while (std::getline(in, line)) {
+    const auto eq = line.find('=');
+    if (eq == std::string::npos)
+      continue;
+
+    const std::string key = line.substr(0, eq);
+    std::string value = line.substr(eq + 1);
+
+    if (key != "color" && key != "primary")
+      continue;
+
+    if (!value.empty() && value[0] == '#')
+      value.erase(0, 1);
+
+    if (value.size() != 6)
+      continue;
+
+    try {
+      const int r = std::stoi(value.substr(0, 2), nullptr, 16);
+      const int g = std::stoi(value.substr(2, 2), nullptr, 16);
+      const int b = std::stoi(value.substr(4, 2), nullptr, 16);
+      m_primaryColor = {r / 255.0f, g / 255.0f, b / 255.0f, 1.0f};
+      m_secondaryColor = {m_primaryColor.r * 0.45f, m_primaryColor.g * 0.45f,
+                          m_primaryColor.b * 0.45f, 1.0f};
+    } catch (...) {
+    }
+  }
 }
