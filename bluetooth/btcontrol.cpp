@@ -97,6 +97,7 @@ bool BTControl::createTables() const {
             blocked INTEGER NOT NULL DEFAULT 0,
             connected INTEGER NOT NULL DEFAULT 0,
             discovered INTEGER NOT NULL DEFAULT 0,
+            display_order INTEGER NOT NULL DEFAULT 0,
             last_seen_utc TEXT NOT NULL DEFAULT '',
             last_connected_utc TEXT NOT NULL DEFAULT '',
             connect_count INTEGER NOT NULL DEFAULT 0
@@ -110,6 +111,37 @@ bool BTControl::createTables() const {
                 << (err ? err : "unknown sqlite error");
     if (err)
       sqlite3_free(err);
+    return false;
+  }
+
+  char *alterErr = nullptr;
+  const int alterRc = sqlite3_exec(
+      db.get(),
+      "ALTER TABLE bluetooth_devices ADD COLUMN display_order INTEGER NOT NULL "
+      "DEFAULT 0;",
+      nullptr, nullptr, &alterErr);
+  if (alterRc != SQLITE_OK) {
+    const std::string msg = alterErr ? alterErr : "";
+    if (msg.find("duplicate column") == std::string::npos) {
+      LOG_ERROR() << "Failed to migrate bluetooth_devices.display_order: "
+                  << msg;
+      sqlite3_free(alterErr);
+      return false;
+    }
+    sqlite3_free(alterErr);
+  }
+
+  char *orderErr = nullptr;
+  const int orderRc = sqlite3_exec(
+      db.get(),
+      "UPDATE bluetooth_devices SET display_order = id WHERE display_order = "
+      "0;",
+      nullptr, nullptr, &orderErr);
+  if (orderRc != SQLITE_OK) {
+    LOG_ERROR() << "Failed to initialize bluetooth device order: "
+                << (orderErr ? orderErr : "unknown sqlite error");
+    if (orderErr)
+      sqlite3_free(orderErr);
     return false;
   }
 
@@ -154,9 +186,14 @@ bool BTControl::upsertDevice(const BTDevice &device) const {
   const char *sql = R"sql(
         INSERT INTO bluetooth_devices (
             mac_address, name, device_type, trusted, paired, blocked, connected,
-            discovered, last_seen_utc, last_connected_utc, connect_count
+            discovered, display_order, last_seen_utc, last_connected_utc,
+            connect_count
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?,
+                COALESCE(NULLIF(?, 0),
+                         (SELECT COALESCE(MAX(display_order), 0) + 1
+                          FROM bluetooth_devices)),
+                ?, ?, ?)
         ON CONFLICT(mac_address) DO UPDATE SET
             name = excluded.name,
             device_type = excluded.device_type,
@@ -191,10 +228,12 @@ bool BTControl::upsertDevice(const BTDevice &device) const {
   sqlite3_bind_int(stmt, 6, device.blocked ? 1 : 0);
   sqlite3_bind_int(stmt, 7, device.connected ? 1 : 0);
   sqlite3_bind_int(stmt, 8, device.discovered ? 1 : 0);
-  sqlite3_bind_text(stmt, 9, device.lastSeenUtc.c_str(), -1, SQLITE_TRANSIENT);
-  sqlite3_bind_text(stmt, 10, device.lastConnectedUtc.c_str(), -1,
+  sqlite3_bind_int(stmt, 9, device.displayOrder);
+  sqlite3_bind_text(stmt, 10, device.lastSeenUtc.c_str(), -1,
                     SQLITE_TRANSIENT);
-  sqlite3_bind_int(stmt, 11, device.connectCount);
+  sqlite3_bind_text(stmt, 11, device.lastConnectedUtc.c_str(), -1,
+                    SQLITE_TRANSIENT);
+  sqlite3_bind_int(stmt, 12, device.connectCount);
 
   const bool ok = (sqlite3_step(stmt) == SQLITE_DONE);
   sqlite3_finalize(stmt);
@@ -337,6 +376,48 @@ bool BTControl::powerOn() {
   if (!autoReconnectBestDevice()) {
     LOG_WARN() << "No paired BT device auto-reconnected: " << lastError();
   }
+
+  if (!getConnectedDevice().has_value())
+    setStatus("Bluetooth on");
+  m_signalPowerChanged.emit(true);
+  return true;
+}
+
+bool BTControl::powerOnForManualControl() {
+  bool powered = false;
+
+  if (!m_bluez.isPoweredOn(&powered)) {
+    setError(m_bluez.lastError().empty() ? "Failed to query bluetooth power"
+                                         : m_bluez.lastError());
+    return false;
+  }
+
+  if (!powered) {
+    LOG_INFO() << "BT manual powerOn: setting Powered=true";
+    if (!m_bluez.setPowered(true)) {
+      setError(m_bluez.lastError().empty() ? "Failed to power on bluetooth"
+                                           : m_bluez.lastError());
+      return false;
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    if (!m_bluez.isPoweredOn(&powered) || !powered) {
+      setError("Bluetooth did not report powered on");
+      return false;
+    }
+  }
+
+  if (!setSystemAlias("Light Controller-Dev")) {
+    LOG_WARN() << "Bluetooth powered on but failed to set alias";
+  }
+
+  if (!enableAgent("NoInputNoOutput")) {
+    LOG_WARN() << "Failed to enable BT agent: " << lastError();
+  }
+
+  setDiscoverable(false);
+  setPairable(false);
 
   setStatus("Bluetooth on");
   m_signalPowerChanged.emit(true);
@@ -518,7 +599,7 @@ bool BTControl::refreshDeviceInfo(const std::string &macAddress) {
 }
 
 bool BTControl::refreshAllKnownDevices() {
-  auto devices = getDevicesRankedByLastConnected();
+  auto devices = getSavedDevicesInDisplayOrder();
   bool ok = true;
 
   for (const auto &device : devices) {
@@ -530,6 +611,10 @@ bool BTControl::refreshAllKnownDevices() {
 }
 
 std::vector<BTDevice> BTControl::getDevicesRankedByLastConnected() const {
+  return getDevicesByAutoConnectPriority();
+}
+
+std::vector<BTDevice> BTControl::getSavedDevicesInDisplayOrder() const {
   std::vector<BTDevice> devices;
 
   SqliteDB db(m_dbPath);
@@ -538,13 +623,10 @@ std::vector<BTDevice> BTControl::getDevicesRankedByLastConnected() const {
 
   const char *sql = R"sql(
         SELECT id, mac_address, name, device_type, trusted, paired, blocked,
-               connected, discovered, last_seen_utc, last_connected_utc, connect_count
+               connected, discovered, display_order, last_seen_utc,
+               last_connected_utc, connect_count
         FROM bluetooth_devices
-        ORDER BY
-            CASE WHEN last_connected_utc = '' THEN 1 ELSE 0 END,
-            last_connected_utc DESC,
-            connect_count DESC,
-            name ASC;
+        ORDER BY display_order ASC, id ASC;
     )sql";
 
   sqlite3_stmt *stmt = nullptr;
@@ -562,11 +644,61 @@ std::vector<BTDevice> BTControl::getDevicesRankedByLastConnected() const {
     d.blocked = sqlite3_column_int(stmt, 6) != 0;
     d.connected = sqlite3_column_int(stmt, 7) != 0;
     d.discovered = sqlite3_column_int(stmt, 8) != 0;
+    d.displayOrder = sqlite3_column_int(stmt, 9);
     d.lastSeenUtc =
-        reinterpret_cast<const char *>(sqlite3_column_text(stmt, 9));
-    d.lastConnectedUtc =
         reinterpret_cast<const char *>(sqlite3_column_text(stmt, 10));
-    d.connectCount = sqlite3_column_int(stmt, 11);
+    d.lastConnectedUtc =
+        reinterpret_cast<const char *>(sqlite3_column_text(stmt, 11));
+    d.connectCount = sqlite3_column_int(stmt, 12);
+    devices.push_back(d);
+  }
+
+  sqlite3_finalize(stmt);
+  return devices;
+}
+
+std::vector<BTDevice> BTControl::getDevicesByAutoConnectPriority() const {
+  std::vector<BTDevice> devices;
+
+  SqliteDB db(m_dbPath);
+  if (!db.valid())
+    return devices;
+
+  const char *sql = R"sql(
+        SELECT id, mac_address, name, device_type, trusted, paired, blocked,
+               connected, discovered, display_order, last_seen_utc,
+               last_connected_utc, connect_count
+        FROM bluetooth_devices
+        WHERE paired = 1
+        ORDER BY
+            CASE WHEN last_connected_utc = '' THEN 1 ELSE 0 END,
+            last_connected_utc DESC,
+            connect_count DESC,
+            display_order ASC,
+            id ASC;
+    )sql";
+
+  sqlite3_stmt *stmt = nullptr;
+  if (sqlite3_prepare_v2(db.get(), sql, -1, &stmt, nullptr) != SQLITE_OK)
+    return devices;
+
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    BTDevice d;
+    d.id = sqlite3_column_int(stmt, 0);
+    d.macAddress = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
+    d.name = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
+    d.deviceType = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3));
+    d.trusted = sqlite3_column_int(stmt, 4) != 0;
+    d.paired = sqlite3_column_int(stmt, 5) != 0;
+    d.blocked = sqlite3_column_int(stmt, 6) != 0;
+    d.connected = sqlite3_column_int(stmt, 7) != 0;
+    d.discovered = sqlite3_column_int(stmt, 8) != 0;
+    d.displayOrder = sqlite3_column_int(stmt, 9);
+    d.lastSeenUtc =
+        reinterpret_cast<const char *>(sqlite3_column_text(stmt, 10));
+    d.lastConnectedUtc =
+        reinterpret_cast<const char *>(sqlite3_column_text(stmt, 11));
+    d.connectCount = sqlite3_column_int(stmt, 12);
     devices.push_back(d);
   }
 
@@ -583,10 +715,11 @@ std::vector<BTDevice> BTControl::getDiscoveredDevices() const {
 
   const char *sql = R"sql(
         SELECT id, mac_address, name, device_type, trusted, paired, blocked,
-               connected, discovered, last_seen_utc, last_connected_utc, connect_count
+               connected, discovered, display_order, last_seen_utc,
+               last_connected_utc, connect_count
         FROM bluetooth_devices
         WHERE discovered = 1
-        ORDER BY name ASC, mac_address ASC;
+        ORDER BY display_order ASC, id ASC;
     )sql";
 
   sqlite3_stmt *stmt = nullptr;
@@ -604,11 +737,12 @@ std::vector<BTDevice> BTControl::getDiscoveredDevices() const {
     d.blocked = sqlite3_column_int(stmt, 6) != 0;
     d.connected = sqlite3_column_int(stmt, 7) != 0;
     d.discovered = sqlite3_column_int(stmt, 8) != 0;
+    d.displayOrder = sqlite3_column_int(stmt, 9);
     d.lastSeenUtc =
-        reinterpret_cast<const char *>(sqlite3_column_text(stmt, 9));
-    d.lastConnectedUtc =
         reinterpret_cast<const char *>(sqlite3_column_text(stmt, 10));
-    d.connectCount = sqlite3_column_int(stmt, 11);
+    d.lastConnectedUtc =
+        reinterpret_cast<const char *>(sqlite3_column_text(stmt, 11));
+    d.connectCount = sqlite3_column_int(stmt, 12);
     devices.push_back(d);
   }
 
@@ -627,7 +761,8 @@ BTControl::getDeviceByMac(const std::string &macAddress) const {
 
   const char *sql = R"sql(
         SELECT id, mac_address, name, device_type, trusted, paired, blocked,
-               connected, discovered, last_seen_utc, last_connected_utc, connect_count
+               connected, discovered, display_order, last_seen_utc,
+               last_connected_utc, connect_count
         FROM bluetooth_devices
         WHERE mac_address = ?;
     )sql";
@@ -649,11 +784,12 @@ BTControl::getDeviceByMac(const std::string &macAddress) const {
     d.blocked = sqlite3_column_int(stmt, 6) != 0;
     d.connected = sqlite3_column_int(stmt, 7) != 0;
     d.discovered = sqlite3_column_int(stmt, 8) != 0;
+    d.displayOrder = sqlite3_column_int(stmt, 9);
     d.lastSeenUtc =
-        reinterpret_cast<const char *>(sqlite3_column_text(stmt, 9));
-    d.lastConnectedUtc =
         reinterpret_cast<const char *>(sqlite3_column_text(stmt, 10));
-    d.connectCount = sqlite3_column_int(stmt, 11);
+    d.lastConnectedUtc =
+        reinterpret_cast<const char *>(sqlite3_column_text(stmt, 11));
+    d.connectCount = sqlite3_column_int(stmt, 12);
 
     sqlite3_finalize(stmt);
     return d;
@@ -664,10 +800,19 @@ BTControl::getDeviceByMac(const std::string &macAddress) const {
 }
 
 std::optional<BTDevice> BTControl::getBestDevice() const {
-  auto devices = getDevicesRankedByLastConnected();
+  auto devices = getDevicesByAutoConnectPriority();
   if (devices.empty())
     return std::nullopt;
   return devices.front();
+}
+
+std::optional<BTDevice> BTControl::getConnectedDevice() const {
+  auto devices = getSavedDevicesInDisplayOrder();
+  for (const auto &device : devices) {
+    if (device.connected)
+      return device;
+  }
+  return std::nullopt;
 }
 
 bool BTControl::pairDevice(const std::string &macAddress) {
@@ -721,7 +866,7 @@ bool BTControl::trustDevice(const std::string &macAddress) {
     return false;
   }
   auto device = getDeviceByMac(macAddress);
-  setStatus("Connected: " +
+  setStatus("Trusted: " +
             ((device && !device->name.empty()) ? device->name : macAddress));
   return true;
 }
@@ -766,6 +911,32 @@ bool BTControl::connectDevice(const std::string &macAddress) {
   return true;
 }
 
+bool BTControl::connectSavedDevice(const std::string &macAddress) {
+  auto saved = getDeviceByMac(macAddress);
+  if (!saved || !saved->paired || saved->blocked) {
+    setError("Bluetooth device is not a saved paired device");
+    return false;
+  }
+
+  if (!isPoweredOn() && !powerOnForManualControl())
+    return false;
+
+  auto current = getConnectedDevice();
+  if (current && current->macAddress != macAddress) {
+    if (!disconnectDevice(current->macAddress)) {
+      LOG_WARN() << "Failed to disconnect current bluetooth device: "
+                 << current->macAddress;
+    }
+  }
+
+  if (!refreshDeviceInfo(macAddress)) {
+    setError("Saved bluetooth device is not available in BlueZ");
+    return false;
+  }
+
+  return connectDevice(macAddress);
+}
+
 bool BTControl::disconnectDevice(const std::string &macAddress) {
   if (!isValidMacAddress(macAddress)) {
     LOG_ERROR() << "disconnectDevice invalid MAC: " << macAddress;
@@ -793,7 +964,7 @@ bool BTControl::disconnectAllDevices() {
     return true;
   }
 
-  auto devices = getDevicesRankedByLastConnected();
+  auto devices = getSavedDevicesInDisplayOrder();
 
   for (const auto &device : devices) {
     if (!device.connected)
@@ -840,6 +1011,39 @@ bool BTControl::removeDevice(const std::string &macAddress) {
   return ok;
 }
 
+bool BTControl::deleteSavedDevice(const std::string &macAddress) {
+  if (!isValidMacAddress(macAddress)) {
+    LOG_ERROR() << "deleteSavedDevice invalid MAC: " << macAddress;
+    return false;
+  }
+
+  if (isPoweredOn()) {
+    auto bluezDevice = m_bluez.getDeviceByAddress(macAddress);
+    if (bluezDevice && !m_bluez.removeDevice(macAddress)) {
+      LOG_WARN() << "Failed to remove bluetooth device from BlueZ: "
+                 << m_bluez.lastError();
+    }
+  }
+
+  SqliteDB db(m_dbPath);
+  if (!db.valid())
+    return false;
+
+  const char *sql = "DELETE FROM bluetooth_devices WHERE mac_address = ?;";
+  sqlite3_stmt *stmt = nullptr;
+  if (sqlite3_prepare_v2(db.get(), sql, -1, &stmt, nullptr) != SQLITE_OK)
+    return false;
+
+  sqlite3_bind_text(stmt, 1, macAddress.c_str(), -1, SQLITE_TRANSIENT);
+  const bool ok = (sqlite3_step(stmt) == SQLITE_DONE);
+  sqlite3_finalize(stmt);
+
+  if (ok)
+    LOG_INFO() << "BT saved device deleted: " << macAddress;
+
+  return ok;
+}
+
 bool BTControl::autoReconnectBestDevice() {
   if (!isPoweredOn()) {
     setError("Bluetooth is off");
@@ -848,7 +1052,7 @@ bool BTControl::autoReconnectBestDevice() {
 
   scanPairedDevices();
 
-  auto devices = getDevicesRankedByLastConnected();
+  auto devices = getDevicesByAutoConnectPriority();
 
   for (const auto &device : devices) {
     if (device.blocked)
@@ -858,6 +1062,12 @@ bool BTControl::autoReconnectBestDevice() {
 
     if (device.connected)
       return true;
+
+    if (!refreshDeviceInfo(device.macAddress)) {
+      LOG_WARN() << "Saved BT device is not available in BlueZ: "
+                 << device.macAddress;
+      continue;
+    }
 
     if (connectDevice(device.macAddress))
       return true;
@@ -879,7 +1089,7 @@ bool BTControl::trustAllPairedDevices() {
   }
 
   bool ok = true;
-  auto devices = getDevicesRankedByLastConnected();
+  auto devices = getSavedDevicesInDisplayOrder();
 
   for (const auto &device : devices) {
     if (!device.paired)
@@ -890,6 +1100,51 @@ bool BTControl::trustAllPairedDevices() {
   }
 
   return ok;
+}
+
+bool BTControl::connectNextSavedDevice() {
+  if (!isPoweredOn()) {
+    setError("Bluetooth is off");
+    return false;
+  }
+
+  scanPairedDevices();
+
+  auto devices = getSavedDevicesInDisplayOrder();
+  if (devices.empty()) {
+    setError("No saved bluetooth devices");
+    return false;
+  }
+
+  int currentIndex = -1;
+  for (size_t i = 0; i < devices.size(); ++i) {
+    if (devices[i].connected) {
+      currentIndex = static_cast<int>(i);
+      break;
+    }
+  }
+
+  const size_t start =
+      currentIndex >= 0 ? static_cast<size_t>(currentIndex + 1) % devices.size()
+                        : 0;
+
+  for (size_t offset = 0; offset < devices.size(); ++offset) {
+    const BTDevice &device = devices[(start + offset) % devices.size()];
+    if (device.blocked || !device.paired)
+      continue;
+
+    if (!refreshDeviceInfo(device.macAddress)) {
+      LOG_WARN() << "Saved BT device is not available in BlueZ: "
+                 << device.macAddress;
+      continue;
+    }
+
+    if (connectDevice(device.macAddress))
+      return true;
+  }
+
+  setError("No saved bluetooth device could be connected");
+  return false;
 }
 
 void BTControl::setStatus(const std::string &msg) const {

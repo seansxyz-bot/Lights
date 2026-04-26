@@ -18,6 +18,7 @@ struct BTDevice {
   bool blocked = false;
   bool connected = false;
   bool discovered = false;
+  int displayOrder = 0;
   std::string lastSeenUtc;
   std::string lastConnectedUtc;
   int connectCount = 0;
@@ -31,6 +32,7 @@ public:
   bool init();
 
   bool powerOn();
+  bool powerOnForManualControl();
   bool powerOff();
   bool isPoweredOn() const;
 
@@ -47,19 +49,25 @@ public:
   bool refreshAllKnownDevices();
 
   std::vector<BTDevice> getDevicesRankedByLastConnected() const;
+  std::vector<BTDevice> getSavedDevicesInDisplayOrder() const;
+  std::vector<BTDevice> getDevicesByAutoConnectPriority() const;
   std::vector<BTDevice> getDiscoveredDevices() const;
   std::optional<BTDevice> getBestDevice() const;
+  std::optional<BTDevice> getConnectedDevice() const;
   std::optional<BTDevice> getDeviceByMac(const std::string &macAddress) const;
 
   bool pairDevice(const std::string &macAddress);
   bool trustDevice(const std::string &macAddress);
   bool connectDevice(const std::string &macAddress);
+  bool connectSavedDevice(const std::string &macAddress);
   bool disconnectDevice(const std::string &macAddress);
   bool disconnectAllDevices();
   bool removeDevice(const std::string &macAddress);
+  bool deleteSavedDevice(const std::string &macAddress);
 
   bool trustAllPairedDevices();
   bool autoReconnectBestDevice();
+  bool connectNextSavedDevice();
 
   const std::string &lastStatus() const;
   const std::string &lastError() const;

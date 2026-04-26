@@ -75,22 +75,36 @@ void DailySportsPoller::start(const std::vector<TeamRecord> &teams) {
 
 void DailySportsPoller::stop() {
   bool expected = true;
-  if (!m_running.compare_exchange_strong(expected, false))
-    return;
+  m_running.compare_exchange_strong(expected, false);
 
   if (m_thread.joinable())
     m_thread.join();
+
+  if (m_onceThread.joinable())
+    m_onceThread.join();
 }
 
 void DailySportsPoller::runOnceAsync(const std::vector<TeamRecord> &teams) {
-  std::thread([this, teams]() {
+  bool expected = false;
+  if (!m_onceRunning.compare_exchange_strong(expected, true)) {
+    LOG_WARN() << "DailySportsPoller one-shot poll already running";
+    return;
+  }
+
+  if (m_onceThread.joinable())
+    m_onceThread.join();
+
+  m_onceThread = std::thread([this, teams]() {
     auto events = pollTeams(teams);
     {
       std::lock_guard<std::mutex> lock(m_mutex);
       m_pendingEvents = std::move(events);
     }
-    m_dispatcher.emit();
-  }).detach();
+    m_onceRunning = false;
+
+    if (m_running)
+      m_dispatcher.emit();
+  });
 }
 
 void DailySportsPoller::threadLoop() {

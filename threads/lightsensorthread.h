@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <glibmm/dispatcher.h>
 #include <mutex>
 #include <sigc++/sigc++.h>
@@ -24,12 +25,14 @@ public:
 private:
   void threadLoop();
   void processMainThreadDispatch();
+  void setBaselineLocked(bool state);
 
 private:
   std::atomic<bool> m_running{false};
   std::thread m_thread;
 
   std::mutex m_mutex;
+  std::condition_variable m_wake;
   GPIOHelper m_gpio;
 
   bool m_initialized{false};

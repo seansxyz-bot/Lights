@@ -186,9 +186,9 @@ bool TeensyClient::readLedState(std::vector<uint8_t> &out) {
   return requestThenRead(REQ_LED_STATE, out.data(), out.size());
 }
 
-bool TeensyClient::readShutdownAck(bool &allOff) {
+bool TeensyClient::readAllOffStatus(bool &allOff) {
   uint8_t b = 0;
-  if (!requestThenRead(REQ_SHUTDOWN, &b, 1))
+  if (!requestThenRead(REQ_ALL_OFF_STATUS, &b, 1))
     return false;
   allOff = b;
   return true;
@@ -231,9 +231,9 @@ bool TeensyClient::sendThemeColors(uint8_t themeId,
 // Pattern speeds (REAL FIX)
 // ============================================================
 
-// Single line (patternId + speed)
-bool TeensyClient::sendPatternSpeed(uint8_t speed) {
-  return write8(CMD_FILE_CHUNK, speed, 0, 0, 0, 0, 0, 0);
+// Single line: patternId + speed
+bool TeensyClient::sendPatternSpeed(uint8_t patternId, uint8_t speed) {
+  return write8(CMD_FILE_CHUNK, patternId, clampSpeed(speed), 0, 0, 0, 0, 0);
 }
 
 // Send ALL patterns (this matches MainWindow usage)
@@ -255,7 +255,7 @@ bool TeensyClient::sendPatternSpeeds(const std::vector<Pattern> &patterns) {
     const uint8_t speed =
         (it != patterns.end()) ? static_cast<uint8_t>(it->speed) : 50;
 
-    if (!sendPatternSpeed(speed)) {
+    if (!sendPatternSpeed(patternId, speed)) {
       abortFile();
       return false;
     }

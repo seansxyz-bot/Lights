@@ -44,6 +44,7 @@ public:
   sigc::signal<void> &signal_edit_pattern_requested();
   sigc::signal<void> &signal_edit_teams_requested();
   sigc::signal<void> &signal_lightshow_requested();
+  sigc::signal<void> &signal_bluetooth_controls_requested();
   sigc::signal<void> &signal_restart_requested();
   sigc::signal<void> &signal_done();
 
@@ -65,6 +66,7 @@ private:
   ImageButton *m_editPatternBtn = nullptr;
   ImageButton *m_editTeamsBtn = nullptr;
   ImageButton *m_lightShowBtn = nullptr;
+  ImageButton *m_bluetoothControlsBtn = nullptr;
   ImageButton *m_restartBtn = nullptr;
   ImageButton *m_okBtn = nullptr;
 
@@ -75,6 +77,7 @@ private:
   sigc::signal<void> m_signalEditPatternRequested;
   sigc::signal<void> m_signalEditTeamsRequested;
   sigc::signal<void> m_signalLightShowRequested;
+  sigc::signal<void> m_signalBluetoothControlsRequested;
   sigc::signal<void> m_signalRestartRequested;
   sigc::signal<void> m_signalDone;
 };

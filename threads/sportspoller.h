@@ -43,7 +43,9 @@ private:
 
   std::string m_settingsPath;
   std::atomic<bool> m_running{false};
+  std::atomic<bool> m_onceRunning{false};
   std::thread m_thread;
+  std::thread m_onceThread;
   std::mutex m_mutex;
   std::vector<TeamRecord> m_teams;
   std::vector<SportsNextGameEvent> m_pendingEvents;

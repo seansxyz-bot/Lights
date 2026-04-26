@@ -15,6 +15,8 @@
 #include "drivers/power/ampswitch.h"
 #include "drivers/power/powerswitch.h"
 #include "engine/lightshow.h"
+#include "gui/bluetoothcontrols.h"
+#include "gui/bluetoothdevicedetail.h"
 #include "gui/clock.h"
 #include "gui/editpattern.h"
 #include "gui/editteam.h"
@@ -50,6 +52,8 @@ class EditThemePage;
 class EditPattern;
 class LightShowSettingsPage;
 
+enum class BluetoothManualAction { None, Connect, Delete };
+
 class MainWindow : public Gtk::Window {
 public:
   MainWindow();
@@ -70,6 +74,7 @@ private:
   bool isSportsSchedule(const Schedule &s);
   void applyCurrentScheduleState();
   void restoreManualLedsAsync();
+  void joinManualRestoreThread();
 
   void sendThemeToTeensyAsync(int themeId, const std::string &themeName,
                               const std::vector<RGB_Color> &colors);
@@ -88,6 +93,9 @@ private:
   std::vector<Pattern> m_pattern;
   std::vector<TeamRecord> m_teams;
   std::vector<TeamRecord> m_liveSportsTeams;
+  bool m_themesLoaded = false;
+  bool m_patternsLoaded = false;
+  bool m_teamsLoaded = false;
   TeensyClient m_teensyClient;
   std::string m_lastShortToastMessage;
   bool m_lightsPowerEnabled = false;
@@ -106,6 +114,7 @@ private:
   BluezAgent m_bluezAgent;
   AmpSwitch m_ampSwitch;
   std::atomic<bool> m_ampEnabled{false};
+  std::atomic<bool> m_btInitialized{false};
 
   // ---------- main shell ----------
   Gtk::Overlay m_overlay;
@@ -128,15 +137,22 @@ private:
   LightShowSettingsPage *m_lightShowSettingsPage = nullptr;
   TeamList *m_teamList = nullptr;
   EditTeam *m_editTeam = nullptr;
+  BluetoothControls *m_bluetoothControlsPage = nullptr;
+  BluetoothDeviceDetail *m_bluetoothDeviceDetailPage = nullptr;
 
   std::atomic<bool> m_btBusy{false};
   std::thread m_btWorker;
+  std::thread m_themeSendThread;
+  std::thread m_patternSendThread;
+  std::thread m_manualRestoreThread;
   Glib::Dispatcher m_btUiDispatcher;
+  Glib::Dispatcher m_btManualUiDispatcher;
 
   std::mutex m_btResultMutex;
   bool m_btResultEnabled = false;
   bool m_btResultSuccess = false;
   std::string m_btResultToast;
+  BluetoothManualAction m_btManualAction = BluetoothManualAction::None;
 
   // ---------- restart toast ----------
   ToastMessage m_toast;
@@ -156,15 +172,38 @@ private:
   std::unique_ptr<MobileLightsPoller> m_mobileLightsPoller;
   std::unique_ptr<DailySportsPoller> m_dailySportsPoller;
   std::unique_ptr<LiveGamePoller> m_liveGamePoller;
+  std::thread m_startupCacheThread;
+  std::thread m_startupHardwareThread;
+  Glib::Dispatcher m_startupCacheDispatcher;
+  Glib::Dispatcher m_startupHardwareDispatcher;
+  std::mutex m_startupMutex;
+  std::mutex m_powerMutex;
+  std::vector<Theme> m_startupThemes;
+  std::vector<Pattern> m_startupPatterns;
+  std::vector<TeamRecord> m_startupTeams;
+  bool m_startupBtInitOk = false;
+  bool m_startupDesiredPowerOn = false;
+  bool m_startupPowerReady = false;
+  bool m_startupSensorRead = false;
+  bool m_startupSensorWantedOn = false;
 
   // ---------- app connections ----------
   sigc::connection m_themeConn;
   sigc::connection m_newHourConn;
   sigc::connection m_newMinuteConn;
   sigc::connection m_newYearConn;
+  sigc::connection m_scheduleStartedConn;
+  sigc::connection m_scheduleEndedConn;
   sigc::connection m_doorbellConn;
   sigc::connection m_lightSensorConn;
   sigc::connection m_environmentConn;
+  sigc::connection m_mobileOptionsConn;
+  sigc::connection m_mobileLedsConn;
+  sigc::connection m_mobileSchedulesConn;
+  sigc::connection m_sportsGamesConn;
+  sigc::connection m_sportsLiveUpdateConn;
+  sigc::connection m_sportsHomeScoreConn;
+  sigc::connection m_sportsGameFinishedConn;
   sigc::connection m_bluetoothPollConn;
   sigc::connection m_bluetoothEnableTimeoutConn;
   sigc::connection m_toastHideConn;
@@ -173,6 +212,14 @@ private:
 private:
   // ---------- setup ----------
   void initializeStartupState();
+  void startAsyncStartupTasks();
+  void startStartupCacheLoad();
+  void onStartupCacheLoaded();
+  void startStartupHardwareApply();
+  void onStartupHardwareFinished();
+  void ensureThemesLoaded();
+  void ensurePatternsLoaded();
+  void ensureTeamsLoaded();
   void loadSettings();
   void startThreads();
   void startConnections();
@@ -191,6 +238,9 @@ private:
   void stopBluetoothPolling();
   void startBluetoothTransition(bool enable);
   void onBluetoothWorkerFinished();
+  void startBluetoothManualConnect(const BTDevice &device);
+  void startBluetoothManualDelete(const BTDevice &device);
+  void onBluetoothManualWorkerFinished();
   void setBluetoothButtonEnabled(bool enabled);
 
   // ---------- navigation ----------
@@ -204,6 +254,8 @@ private:
   void showClockPage();
   void showGameDayPage();
   void showLightShowSettingsPage();
+  void showBluetoothControlsPage();
+  void showBluetoothDeviceDetailPage(const BTDevice &device);
 
   void destroyTemporaryPage(const std::string &pageName);
   void destroyAllTemporaryPages();
@@ -251,6 +303,8 @@ private:
   void showEditTeamPage(const TeamRecord &team);
   void removeEditTeamPage();
   void removeTeamListPage();
+  void removeBluetoothControlsPage();
+  void removeBluetoothDeviceDetailPage();
 
   // ---------- helpers ----------
   void showEditThemesPage();

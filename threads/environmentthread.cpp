@@ -6,7 +6,10 @@ extern "C" {
 
 #include <chrono>
 
-EnvironmentThread::EnvironmentThread() {}
+EnvironmentThread::EnvironmentThread() {
+  m_dispatcher.connect(sigc::mem_fun(
+      *this, &EnvironmentThread::processMainThreadDispatch));
+}
 
 EnvironmentThread::~EnvironmentThread() { stop(); }
 
@@ -45,7 +48,12 @@ void EnvironmentThread::run() {
     Reading reading;
 
     if (readSensor(reading)) {
-      m_signalEnvironmentChanged.emit(reading);
+      {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_pendingReading = reading;
+        m_hasPending = true;
+      }
+      m_dispatcher.emit();
     }
 
     for (int i = 0; i < 60 && m_running; ++i) {
@@ -86,4 +94,19 @@ bool EnvironmentThread::readSensor(Reading &reading) {
 
   bme280Close(fd);
   return true;
+}
+
+void EnvironmentThread::processMainThreadDispatch() {
+  Reading reading;
+  bool hasPending = false;
+
+  {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    hasPending = m_hasPending;
+    reading = m_pendingReading;
+    m_hasPending = false;
+  }
+
+  if (hasPending)
+    m_signalEnvironmentChanged.emit(reading);
 }

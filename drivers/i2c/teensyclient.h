@@ -30,7 +30,7 @@ public:
 
     REQ_WAKE_READY = 0xF0,
     REQ_LED_STATE = 0xF1,
-    REQ_SHUTDOWN = 0xF2,
+    REQ_ALL_OFF_STATUS = 0xF2,
     REQ_FILE_STATUS = 0xF3,
   };
 
@@ -63,7 +63,7 @@ public:
   // --- read requests ---
   bool readWakeReady(bool &ready);
   bool readLedState(std::vector<uint8_t> &out_rgb);
-  bool readShutdownAck(bool &allOff);
+  bool readAllOffStatus(bool &allOff);
   bool readFileStatus(uint8_t &status);
 
   // --- file transfer ---
@@ -73,7 +73,7 @@ public:
   bool sendThemeColor(uint8_t r, uint8_t g, uint8_t b);
   bool sendThemeColors(uint8_t themeId, const std::vector<RGB_Color> &colors);
 
-  bool sendPatternSpeed(uint8_t speed);
+  bool sendPatternSpeed(uint8_t patternId, uint8_t speed);
   bool sendPatternSpeeds(const std::vector<Pattern> &patterns);
 
   bool sendLedFrame(const std::vector<std::array<uint8_t, 3>> &frame);

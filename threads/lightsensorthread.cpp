@@ -8,10 +8,10 @@ LightSensorThread::LightSensorThread() {
 LightSensorThread::~LightSensorThread() { stop(); }
 
 void LightSensorThread::start() {
-  if (m_running)
+  bool expected = false;
+  if (!m_running.compare_exchange_strong(expected, true))
     return;
 
-  m_running = true;
   m_thread = std::thread(&LightSensorThread::threadLoop, this);
 }
 
@@ -20,12 +20,22 @@ void LightSensorThread::stop() {
     return;
 
   m_running = false;
+  m_wake.notify_all();
 
   if (m_thread.joinable())
     m_thread.join();
 }
 
-bool LightSensorThread::readOnce() { return m_gpio.read(PIN_SENSOR, true); }
+bool LightSensorThread::readOnce() {
+  const bool sensorWantsLightsOn = m_gpio.read(PIN_SENSOR, true);
+
+  {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    setBaselineLocked(sensorWantsLightsOn);
+  }
+
+  return sensorWantsLightsOn;
+}
 
 sigc::signal<void(bool)> &LightSensorThread::signal_sensor_changed() {
   return m_signalSensorChanged;
@@ -43,8 +53,7 @@ void LightSensorThread::threadLoop() {
       std::lock_guard<std::mutex> lock(m_mutex);
 
       if (!m_initialized) {
-        m_lastState = sensorWantsLightsOn;
-        m_initialized = true;
+        setBaselineLocked(sensorWantsLightsOn);
       } else if (sensorWantsLightsOn != m_lastState) {
         m_lastState = sensorWantsLightsOn;
         m_pendingState = sensorWantsLightsOn;
@@ -56,9 +65,8 @@ void LightSensorThread::threadLoop() {
     if (emitNow)
       m_dispatcher.emit();
 
-    for (int i = 0; i < 300 && m_running; ++i) {
-      std::this_thread::sleep_for(seconds(1));
-    }
+    std::unique_lock<std::mutex> lock(m_mutex);
+    m_wake.wait_for(lock, seconds(300), [this]() { return !m_running; });
   }
 }
 
@@ -75,4 +83,11 @@ void LightSensorThread::processMainThreadDispatch() {
 
   if (hasPending)
     m_signalSensorChanged.emit(state);
+}
+
+void LightSensorThread::setBaselineLocked(bool state) {
+  m_lastState = state;
+  m_pendingState = state;
+  m_hasPending = false;
+  m_initialized = true;
 }

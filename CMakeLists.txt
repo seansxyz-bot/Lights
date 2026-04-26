@@ -54,6 +54,8 @@ set(SOURCES
     engine/renderer.h
 
     gui/calandar.h
+    gui/bluetoothcontrols.h
+    gui/bluetoothdevicedetail.h
     gui/clock.h
     gui/colorwheelpicker.h
     gui/deltaall.h
@@ -106,6 +108,8 @@ set(SOURCES
     engine/renderer.cpp
 
     gui/calandar.cpp
+    gui/bluetoothcontrols.cpp
+    gui/bluetoothdevicedetail.cpp
     gui/clock.cpp
     gui/colorwheelpicker.cpp
     gui/deltaall.cpp

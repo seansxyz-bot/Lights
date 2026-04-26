@@ -3,6 +3,8 @@
 #include "drivers/i2c/bme280.h"
 #include "drivers/network/httphelper.h"
 #include "engine/engine.h"
+#include "gui/bluetoothcontrols.h"
+#include "gui/bluetoothdevicedetail.h"
 #include "gui/deltaall.h"
 #include "gui/deltagroup.h"
 #include "gui/home.h"
@@ -128,7 +130,6 @@ MainWindow::MainWindow() : m_btControl(std::string(SETTINGS_PATH)) {
   fullscreen();
 
   loadSettings();
-  initializeStartupState();
   buildShell();
   startThreads();
   startConnections();
@@ -142,6 +143,7 @@ MainWindow::MainWindow() : m_btControl(std::string(SETTINGS_PATH)) {
 
   showHomePage();
   resetIdleClockTimer();
+  startAsyncStartupTasks();
 
   LOG_INFO() << "MainWindow ctor complete";
 }
@@ -150,40 +152,17 @@ void MainWindow::initializeStartupState() {
 
   m_bluetoothState = 0;
 
-  LOG_INFO() << "BT powerOn: rfkill unblock bluetooth";
-  setBluetoothRfkillBlocked(false);
-
-  Glib::signal_idle().connect_once([this]() {
-    if (!m_shuttingDown) {
-      startBluetoothTransition(false);
-    }
-  });
-
-  LOG_INFO() << "Applying startup power state";
-  bool desiredPowerOn = m_options.on != 0;
-
-  if (m_options.sensor) {
-    desiredPowerOn = m_lightSensorThread.readOnce();
-
-    m_options.on = desiredPowerOn ? 1 : 0;
-    writeOptions(SETTINGS_PATH, m_options);
-  }
-
-  const bool powerReady = setLightsPowerEnabled(desiredPowerOn);
-
   if (!m_ampSwitch.setEnabled(false)) {
     LOG_WARN() << "Failed to turn amp off at startup: "
                << m_ampSwitch.lastError();
   } else {
     m_ampEnabled = false;
   }
-
-  if (desiredPowerOn && !powerReady) {
-    LOG_WARN() << "Teensy was powered, but readiness check failed at startup";
-  }
 }
 
 bool MainWindow::setLightsPowerEnabled(bool enabled) {
+  std::lock_guard<std::mutex> lock(m_powerMutex);
+
   if (!m_powerSwitch.setEnabled(enabled)) {
     LOG_WARN() << "Failed to set lights power "
                << (enabled ? "on: " : "off: ") << m_powerSwitch.lastError();
@@ -199,7 +178,13 @@ bool MainWindow::setLightsPowerEnabled(bool enabled) {
     return true;
   }
 
-  return waitForTeensyReady();
+  const bool ready = waitForTeensyReady();
+  if (!ready) {
+    m_teensyClient.on.store(false, std::memory_order_relaxed);
+    m_teensyClient.closeBus();
+  }
+
+  return ready;
 }
 
 bool MainWindow::waitForTeensyReady() {
@@ -218,6 +203,8 @@ bool MainWindow::waitForTeensyReady() {
     std::this_thread::sleep_for(std::chrono::milliseconds(150));
   }
 
+  m_teensyClient.on.store(false, std::memory_order_relaxed);
+  m_teensyClient.closeBus();
   return false;
 }
 
@@ -225,14 +212,12 @@ void MainWindow::loadSettings() {
   writeToServer = true;
   LOG_INFO() << "Loading settings from " << SETTINGS_PATH;
 
+  ensureCoreSchema(std::string(SETTINGS_PATH) + "/lights.db");
+
   m_ledInfo = readLEDInfo(std::string(SETTINGS_PATH));
   m_options = readOptions(std::string(SETTINGS_PATH));
-  std::cout << "ONNNN - " << m_options.on << std::endl;
   m_schedule = readSchedule(std::string(SETTINGS_PATH));
-  m_themes = readThemeColors(std::string(SETTINGS_PATH));
-  m_pattern = readPatternSpeeds(std::string(SETTINGS_PATH));
   ensureSportsSchema(sportsDbPath());
-  m_teams = readTeams(sportsDbPath());
 
   std::time_t now = std::time(nullptr);
   std::tm local_tm{};
@@ -242,29 +227,221 @@ void MainWindow::loadSettings() {
   updateMoveableHolidayDates(year);
   LOG_INFO() << "Settings loaded. leds=" << m_ledInfo.size()
              << " schedule_entries=" << m_schedule.size();
+}
 
-  if (!m_btControl.init()) {
-    LOG_ERROR() << "BTControl init failed";
-  } else {
-    LOG_INFO() << "BTControl initialized";
+void MainWindow::startAsyncStartupTasks() {
+  initializeStartupState();
+
+  m_startupCacheDispatcher.connect(
+      sigc::mem_fun(*this, &MainWindow::onStartupCacheLoaded));
+  m_startupHardwareDispatcher.connect(
+      sigc::mem_fun(*this, &MainWindow::onStartupHardwareFinished));
+
+  Glib::signal_idle().connect_once([this]() {
+    if (m_shuttingDown)
+      return;
+
+    startStartupCacheLoad();
+    startStartupHardwareApply();
+  });
+}
+
+void MainWindow::startStartupCacheLoad() {
+  if (m_startupCacheThread.joinable())
+    return;
+
+  m_startupCacheThread = std::thread([this]() {
+    std::vector<Theme> themes;
+    std::vector<Pattern> patterns;
+    std::vector<TeamRecord> teams;
+    bool btInitOk = false;
+
+    if (!m_shuttingDown) {
+      themes = readThemeColors(std::string(SETTINGS_PATH));
+      patterns = readPatternSpeeds(std::string(SETTINGS_PATH));
+      teams = readTeams(sportsDbPath());
+
+      LOG_INFO() << "BT startup init: rfkill unblock bluetooth";
+      setBluetoothRfkillBlocked(false);
+      btInitOk = m_btControl.init();
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(m_startupMutex);
+      m_startupThemes = std::move(themes);
+      m_startupPatterns = std::move(patterns);
+      m_startupTeams = std::move(teams);
+      m_startupBtInitOk = btInitOk;
+    }
+
+    if (!m_shuttingDown)
+      m_startupCacheDispatcher.emit();
+  });
+}
+
+void MainWindow::onStartupCacheLoaded() {
+  if (m_startupCacheThread.joinable())
+    m_startupCacheThread.join();
+
+  bool btInitOk = false;
+
+  {
+    std::lock_guard<std::mutex> lock(m_startupMutex);
+
+    if (!m_themesLoaded) {
+      m_themes = std::move(m_startupThemes);
+      m_themesLoaded = true;
+    }
+
+    if (!m_patternsLoaded) {
+      m_pattern = std::move(m_startupPatterns);
+      m_patternsLoaded = true;
+    }
+
+    if (!m_teamsLoaded) {
+      m_teams = std::move(m_startupTeams);
+      m_teamsLoaded = true;
+    }
+
+    btInitOk = m_startupBtInitOk;
   }
+
+  LOG_INFO() << "Startup cache loaded. themes=" << m_themes.size()
+             << " patterns=" << m_pattern.size()
+             << " teams=" << m_teams.size();
+
+  if (!btInitOk) {
+    LOG_ERROR() << "BTControl init failed";
+  } else if (!m_shuttingDown) {
+    LOG_INFO() << "BTControl initialized";
+    m_btInitialized = true;
+    startBluetoothTransition(false);
+  }
+
+  if (m_dailySportsPoller && m_teamsLoaded) {
+    m_dailySportsPoller->start(m_teams);
+    m_dailySportsPoller->runOnceAsync(m_teams);
+  }
+}
+
+void MainWindow::startStartupHardwareApply() {
+  if (m_startupHardwareThread.joinable())
+    return;
+
+  const Options startupOptions = m_options;
+
+  m_startupHardwareThread = std::thread([this, startupOptions]() {
+    bool desiredPowerOn = startupOptions.on != 0;
+    bool sensorRead = false;
+    bool sensorWantedOn = desiredPowerOn;
+
+    if (!m_shuttingDown && startupOptions.sensor) {
+      sensorWantedOn = m_lightSensorThread.readOnce();
+      desiredPowerOn = sensorWantedOn;
+      sensorRead = true;
+    }
+
+    bool powerReady = false;
+    if (!m_shuttingDown)
+      powerReady = setLightsPowerEnabled(desiredPowerOn);
+
+    if (sensorRead) {
+      Options updated = startupOptions;
+      updated.on = sensorWantedOn ? 1 : 0;
+      writeOptions(SETTINGS_PATH, updated);
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(m_startupMutex);
+      m_startupDesiredPowerOn = desiredPowerOn;
+      m_startupPowerReady = powerReady;
+      m_startupSensorRead = sensorRead;
+      m_startupSensorWantedOn = sensorWantedOn;
+    }
+
+    if (!m_shuttingDown)
+      m_startupHardwareDispatcher.emit();
+  });
+}
+
+void MainWindow::onStartupHardwareFinished() {
+  if (m_startupHardwareThread.joinable())
+    m_startupHardwareThread.join();
+
+  bool desiredPowerOn = false;
+  bool powerReady = false;
+  bool sensorRead = false;
+  bool sensorWantedOn = false;
+
+  {
+    std::lock_guard<std::mutex> lock(m_startupMutex);
+    desiredPowerOn = m_startupDesiredPowerOn;
+    powerReady = m_startupPowerReady;
+    sensorRead = m_startupSensorRead;
+    sensorWantedOn = m_startupSensorWantedOn;
+  }
+
+  if (sensorRead) {
+    m_options.on = sensorWantedOn ? 1 : 0;
+  }
+
+  if (desiredPowerOn && powerReady)
+    applyCurrentScheduleState();
+  else if (desiredPowerOn && !powerReady)
+    LOG_WARN() << "Teensy was powered, but readiness check failed at startup";
+
+  if (m_options.sensor && !m_shuttingDown)
+    m_lightSensorThread.start();
+
+  updateLightShowState();
+}
+
+void MainWindow::ensureThemesLoaded() {
+  if (m_themesLoaded)
+    return;
+
+  std::lock_guard<std::mutex> lock(m_startupMutex);
+  if (m_themesLoaded)
+    return;
+
+  m_themes = readThemeColors(std::string(SETTINGS_PATH));
+  m_themesLoaded = true;
+}
+
+void MainWindow::ensurePatternsLoaded() {
+  if (m_patternsLoaded)
+    return;
+
+  std::lock_guard<std::mutex> lock(m_startupMutex);
+  if (m_patternsLoaded)
+    return;
+
+  m_pattern = readPatternSpeeds(std::string(SETTINGS_PATH));
+  m_patternsLoaded = true;
+}
+
+void MainWindow::ensureTeamsLoaded() {
+  if (m_teamsLoaded)
+    return;
+
+  std::lock_guard<std::mutex> lock(m_startupMutex);
+  if (m_teamsLoaded)
+    return;
+
+  m_teams = readTeams(sportsDbPath());
+  m_teamsLoaded = true;
 }
 
 void MainWindow::startThreads() {
   LOG_INFO() << "Starting ClockThread";
   ClockThread::instance().start();
   ClockThread::instance().setSchedules(m_schedule);
-  if (m_options.on && m_lightsPowerEnabled && waitForTeensyReady())
-    applyCurrentScheduleState();
 
   LOG_INFO() << "Starting DoorbellThread";
   m_doorbellThread.start();
   m_mobileLightsPoller =
       std::make_unique<MobileLightsPoller>(m_ledInfo, m_options, m_schedule);
   m_mobileLightsPoller->start();
-  if (m_options.sensor) {
-    m_lightSensorThread.start();
-  }
   m_environmentThread.start();
 
   m_dailySportsPoller = std::make_unique<DailySportsPoller>(SETTINGS_PATH);
@@ -279,7 +456,7 @@ void MainWindow::startConnections() {
       ClockThread::instance().signal_new_hour().connect([this](int hour) {
         LOG_INFO() << "Top of the hour: " << hour;
 
-        if (hour == 0 && m_dailySportsPoller)
+        if (hour == 0 && m_dailySportsPoller && m_teamsLoaded)
           m_dailySportsPoller->runOnceAsync(m_teams);
 
         triggerHourlyGameDayAnimation();
@@ -293,26 +470,28 @@ void MainWindow::startConnections() {
         LOG_INFO() << "New year detected: " << year;
         onNewYear(year);
       });
-  ClockThread::instance().signal_schedule_started().connect(
+  m_scheduleStartedConn = ClockThread::instance().signal_schedule_started().connect(
       sigc::mem_fun(*this, &MainWindow::onScheduleStarted));
 
-  ClockThread::instance().signal_schedule_ended().connect(
+  m_scheduleEndedConn = ClockThread::instance().signal_schedule_ended().connect(
       sigc::mem_fun(*this, &MainWindow::onScheduleEnded));
 
   m_doorbellConn = m_doorbellThread.signal_doorbell_changed().connect(
       sigc::mem_fun(*this, &MainWindow::onDoorbellChanged));
 
-  m_mobileLightsPoller->signal_options_changed().connect(
+  m_mobileOptionsConn = m_mobileLightsPoller->signal_options_changed().connect(
       sigc::mem_fun(*this, &MainWindow::onMobileOptionsChanged));
 
-  m_mobileLightsPoller->signal_leds_changed().connect(
+  m_mobileLedsConn = m_mobileLightsPoller->signal_leds_changed().connect(
       sigc::mem_fun(*this, &MainWindow::onMobileLEDsChanged));
 
-  m_mobileLightsPoller->signal_schedules_changed().connect(
+  m_mobileSchedulesConn = m_mobileLightsPoller->signal_schedules_changed().connect(
       sigc::mem_fun(*this, &MainWindow::onMobileSchedulesChanged));
 
   m_btUiDispatcher.connect(
       sigc::mem_fun(*this, &MainWindow::onBluetoothWorkerFinished));
+  m_btManualUiDispatcher.connect(
+      sigc::mem_fun(*this, &MainWindow::onBluetoothManualWorkerFinished));
 
   m_powerChangedConn = m_powerSwitch.signal_power_changed().connect(
       sigc::mem_fun(*this, &MainWindow::onPowerSwitchChanged));
@@ -327,24 +506,19 @@ void MainWindow::startConnections() {
       sigc::mem_fun(*this, &MainWindow::onEnvironmentChanged));
 
   if (m_dailySportsPoller) {
-    m_dailySportsPoller->signal_games_checked().connect(
+    m_sportsGamesConn = m_dailySportsPoller->signal_games_checked().connect(
         sigc::mem_fun(*this, &MainWindow::onSportsGamesChecked));
   }
 
   if (m_liveGamePoller) {
-    m_liveGamePoller->signal_live_update().connect(
+    m_sportsLiveUpdateConn = m_liveGamePoller->signal_live_update().connect(
         sigc::mem_fun(*this, &MainWindow::onSportsLiveUpdate));
-    m_liveGamePoller->signal_home_score().connect(
+    m_sportsHomeScoreConn = m_liveGamePoller->signal_home_score().connect(
         sigc::mem_fun(*this, &MainWindow::onSportsHomeScore));
-    m_liveGamePoller->signal_game_finished().connect(
+    m_sportsGameFinishedConn = m_liveGamePoller->signal_game_finished().connect(
         sigc::mem_fun(*this, &MainWindow::onSportsGameFinished));
   }
 
-  if (m_dailySportsPoller)
-  {
-    m_dailySportsPoller->start(m_teams);
-    m_dailySportsPoller->runOnceAsync(m_teams);
-  }
 }
 
 void MainWindow::buildShell() {
@@ -524,6 +698,7 @@ void MainWindow::showSettingsPage() {
 
   m_settingsPage = Gtk::manage(
       new Settings(ICON_PATH, m_options, m_bluetoothState, m_lightShowRunning));
+  m_settingsPage->set_bluetooth_enabled(m_btInitialized && !m_btBusy.load());
 
   m_settingsPage->signal_auto_sensor_toggled().connect([this](bool enabled) {
     m_options.sensor = enabled ? 1 : 0;
@@ -588,6 +763,9 @@ void MainWindow::showSettingsPage() {
 
   m_settingsPage->signal_lightshow_requested().connect(
       [this]() { showLightShowSettingsPage(); });
+
+  m_settingsPage->signal_bluetooth_controls_requested().connect(
+      [this]() { showBluetoothControlsPage(); });
 }
 
 void MainWindow::setBluetoothButtonEnabled(bool enabled) {
@@ -596,6 +774,11 @@ void MainWindow::setBluetoothButtonEnabled(bool enabled) {
 }
 
 void MainWindow::startBluetoothTransition(bool enable) {
+  if (!m_btInitialized) {
+    LOG_WARN() << "Bluetooth transition ignored before BTControl init";
+    return;
+  }
+
   if (m_btBusy.exchange(true)) {
     LOG_WARN() << "Bluetooth transition ignored because one is already running";
     return;
@@ -646,8 +829,8 @@ void MainWindow::startBluetoothTransition(bool enable) {
           LOG_INFO() << "Bluetooth pairing mode on";
         }
 
-        auto best = m_btControl.getBestDevice();
-        if (setupOk && best && best->connected) {
+        auto connectedDevice = m_btControl.getConnectedDevice();
+        if (setupOk && connectedDevice) {
           if (!m_ampSwitch.setEnabled(true)) {
             LOG_WARN() << "Failed to turn amp on: " << m_ampSwitch.lastError();
           } else {
@@ -688,7 +871,6 @@ void MainWindow::startBluetoothTransition(bool enable) {
                             : m_btControl.lastError());
       } else {
         m_bluetoothState = 0;
-        toast = "Bluetooth off";
         success = true;
       }
     }
@@ -734,8 +916,8 @@ void MainWindow::onBluetoothWorkerFinished() {
           if (!m_bluetoothState)
             return false;
 
-          auto best = m_btControl.getBestDevice();
-          if (best && best->connected)
+          auto connectedDevice = m_btControl.getConnectedDevice();
+          if (connectedDevice)
             return false;
 
           LOG_WARN() << "Bluetooth pairing timeout; disabling bluetooth";
@@ -760,8 +942,143 @@ void MainWindow::onBluetoothWorkerFinished() {
   updateLightShowState();
 }
 
+void MainWindow::startBluetoothManualConnect(const BTDevice &device) {
+  if (m_btBusy.exchange(true)) {
+    LOG_WARN() << "Bluetooth manual connect ignored because BT is busy";
+    return;
+  }
+
+  if (m_bluetoothDeviceDetailPage)
+    m_bluetoothDeviceDetailPage->set_busy(true);
+
+  if (m_btWorker.joinable())
+    m_btWorker.join();
+
+  m_btWorker = std::thread([this, device]() {
+    bool success = false;
+    std::string toast;
+
+    if (!m_shuttingDown) {
+      success = m_btControl.connectSavedDevice(device.macAddress);
+      m_bluetoothState = m_btControl.isPoweredOn() ? 1 : 0;
+
+      auto connected = m_btControl.getConnectedDevice();
+      if (success && connected) {
+        if (!m_ampSwitch.setEnabled(true)) {
+          LOG_WARN() << "Failed to turn amp on after manual bluetooth connect: "
+                     << m_ampSwitch.lastError();
+        } else {
+          m_ampEnabled = true;
+        }
+        toast = bluetoothToastMessage(m_btControl.lastStatus());
+      } else if (!connected && m_ampEnabled.load()) {
+        if (!m_ampSwitch.setEnabled(false)) {
+          LOG_WARN() << "Failed to turn amp off after manual connect failure: "
+                     << m_ampSwitch.lastError();
+        } else {
+          m_ampEnabled = false;
+        }
+      }
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(m_btResultMutex);
+      m_btResultEnabled = true;
+      m_btResultSuccess = success;
+      m_btResultToast = toast;
+      m_btManualAction = BluetoothManualAction::Connect;
+    }
+
+    m_btManualUiDispatcher.emit();
+  });
+}
+
+void MainWindow::startBluetoothManualDelete(const BTDevice &device) {
+  if (m_btBusy.exchange(true)) {
+    LOG_WARN() << "Bluetooth manual delete ignored because BT is busy";
+    return;
+  }
+
+  if (m_bluetoothDeviceDetailPage)
+    m_bluetoothDeviceDetailPage->set_busy(true);
+
+  if (m_btWorker.joinable())
+    m_btWorker.join();
+
+  m_btWorker = std::thread([this, device]() {
+    bool success = false;
+
+    if (!m_shuttingDown) {
+      success = m_btControl.deleteSavedDevice(device.macAddress);
+      m_bluetoothState = m_btControl.isPoweredOn() ? 1 : 0;
+
+      auto connected = m_btControl.getConnectedDevice();
+      if (!connected && m_ampEnabled.load()) {
+        if (!m_ampSwitch.setEnabled(false)) {
+          LOG_WARN() << "Failed to turn amp off after bluetooth delete: "
+                     << m_ampSwitch.lastError();
+        } else {
+          m_ampEnabled = false;
+        }
+      }
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(m_btResultMutex);
+      m_btResultEnabled = true;
+      m_btResultSuccess = success;
+      m_btResultToast.clear();
+      m_btManualAction = BluetoothManualAction::Delete;
+    }
+
+    m_btManualUiDispatcher.emit();
+  });
+}
+
+void MainWindow::onBluetoothManualWorkerFinished() {
+  if (m_btWorker.joinable())
+    m_btWorker.join();
+
+  bool success = false;
+  std::string toast;
+  BluetoothManualAction action = BluetoothManualAction::None;
+
+  {
+    std::lock_guard<std::mutex> lock(m_btResultMutex);
+    success = m_btResultSuccess;
+    toast = m_btResultToast;
+    action = m_btManualAction;
+    m_btManualAction = BluetoothManualAction::None;
+  }
+
+  if (success && action == BluetoothManualAction::Connect) {
+    if (m_bluetoothPollConn.connected())
+      m_bluetoothPollConn.disconnect();
+
+    m_bluetoothPollConn = Glib::signal_timeout().connect_seconds(
+        sigc::mem_fun(*this, &MainWindow::onBluetoothPollTick), 2);
+
+    if (m_bluetoothEnableTimeoutConn.connected())
+      m_bluetoothEnableTimeoutConn.disconnect();
+
+    if (!toast.empty())
+      showShortToast(toast);
+  }
+
+  if (action == BluetoothManualAction::Delete) {
+    removeBluetoothDeviceDetailPage();
+    showBluetoothControlsPage();
+  } else if (m_bluetoothDeviceDetailPage) {
+    m_bluetoothDeviceDetailPage->set_busy(false);
+  }
+
+  m_btBusy = false;
+  updateLightShowState();
+}
+
 void MainWindow::showThemesPage() {
   destroyTemporaryPage("themes");
+  ensureThemesLoaded();
 
   m_themesPage = Gtk::manage(
       new Themes(std::string(ICON_PATH), m_themes, m_options.theme));
@@ -882,6 +1199,7 @@ void MainWindow::showDeltaGroupPage() {
 void MainWindow::createTeamListPage() {
   if (m_teamList)
     return;
+  ensureTeamsLoaded();
 
   m_teamList = Gtk::manage(
       new TeamList(ICON_PATH, std::string(SETTINGS_PATH) + "/lights.db"));
@@ -914,12 +1232,88 @@ void MainWindow::showTeamListPage() {
   m_stack.queue_draw();
 }
 
+void MainWindow::showBluetoothControlsPage() {
+  LOG_INFO() << "showBluetoothControlsPage requested";
+
+  removeBluetoothControlsPage();
+  removeBluetoothDeviceDetailPage();
+
+  if (m_btControl.isPoweredOn())
+    m_btControl.refreshAllKnownDevices();
+
+  std::vector<BTDevice> devices;
+  for (const auto &device : m_btControl.getSavedDevicesInDisplayOrder()) {
+    if (!device.paired)
+      continue;
+    devices.push_back(device);
+    if (devices.size() >= 12)
+      break;
+  }
+
+  m_bluetoothControlsPage =
+      Gtk::manage(new BluetoothControls(ICON_PATH, devices));
+
+  m_bluetoothControlsPage->signal_cancel().connect([this]() {
+    removeBluetoothControlsPage();
+    showSettingsPage();
+  });
+
+  m_bluetoothControlsPage->signal_device_selected().connect(
+      [this](BTDevice device) { showBluetoothDeviceDetailPage(device); });
+
+  m_stack.add(*m_bluetoothControlsPage, "bluetooth_controls");
+  m_stack.show_all_children();
+  m_stack.set_visible_child(*m_bluetoothControlsPage);
+  m_stack.queue_draw();
+}
+
+void MainWindow::showBluetoothDeviceDetailPage(const BTDevice &device) {
+  LOG_INFO() << "showBluetoothDeviceDetailPage requested";
+
+  removeBluetoothDeviceDetailPage();
+
+  m_bluetoothDeviceDetailPage =
+      Gtk::manage(new BluetoothDeviceDetail(ICON_PATH, device));
+
+  m_bluetoothDeviceDetailPage->signal_cancel().connect([this]() {
+    removeBluetoothDeviceDetailPage();
+    showBluetoothControlsPage();
+  });
+
+  m_bluetoothDeviceDetailPage->signal_connect_requested().connect(
+      [this](BTDevice selected) { startBluetoothManualConnect(selected); });
+
+  m_bluetoothDeviceDetailPage->signal_delete_requested().connect(
+      [this](BTDevice selected) { startBluetoothManualDelete(selected); });
+
+  m_stack.add(*m_bluetoothDeviceDetailPage, "bluetooth_device_detail");
+  m_stack.show_all_children();
+  m_stack.set_visible_child(*m_bluetoothDeviceDetailPage);
+  m_stack.queue_draw();
+}
+
 void MainWindow::removeTeamListPage() {
   if (!m_teamList)
     return;
 
   m_stack.remove(*m_teamList);
   m_teamList = nullptr;
+}
+
+void MainWindow::removeBluetoothControlsPage() {
+  if (!m_bluetoothControlsPage)
+    return;
+
+  m_stack.remove(*m_bluetoothControlsPage);
+  m_bluetoothControlsPage = nullptr;
+}
+
+void MainWindow::removeBluetoothDeviceDetailPage() {
+  if (!m_bluetoothDeviceDetailPage)
+    return;
+
+  m_stack.remove(*m_bluetoothDeviceDetailPage);
+  m_bluetoothDeviceDetailPage = nullptr;
 }
 
 void MainWindow::createEditTeamPage(const TeamRecord &team) {
@@ -1069,11 +1463,13 @@ bool MainWindow::onBluetoothPollTick() {
 
   const std::string newStatus = m_btControl.lastStatus();
   if (!newStatus.empty() && newStatus != oldStatus) {
-    showShortToast(bluetoothToastMessage(newStatus));
+    const std::string toast = bluetoothToastMessage(newStatus);
+    if (!toast.empty())
+      showShortToast(toast);
   }
 
-  auto best = m_btControl.getBestDevice();
-  if (best && best->connected) {
+  auto connectedDevice = m_btControl.getConnectedDevice();
+  if (connectedDevice) {
     if (!m_ampEnabled.load()) {
       if (!m_ampSwitch.setEnabled(true)) {
         LOG_WARN() << "Failed to turn amp on after bluetooth connect: "
@@ -1092,11 +1488,13 @@ bool MainWindow::onBluetoothPollTick() {
   if (m_btControl.autoReconnectBestDevice()) {
     const std::string reconnectStatus = m_btControl.lastStatus();
     if (!reconnectStatus.empty() && reconnectStatus != newStatus) {
-      showShortToast(bluetoothToastMessage(reconnectStatus));
+      const std::string toast = bluetoothToastMessage(reconnectStatus);
+      if (!toast.empty())
+        showShortToast(toast);
     }
 
-    auto reconnected = m_btControl.getBestDevice();
-    if (reconnected && reconnected->connected) {
+    auto reconnected = m_btControl.getConnectedDevice();
+    if (reconnected) {
       if (!m_ampEnabled.load()) {
         if (!m_ampSwitch.setEnabled(true)) {
           LOG_WARN() << "Failed to turn amp on after bluetooth reconnect: "
@@ -1159,6 +1557,10 @@ void MainWindow::destroyTemporaryPage(const std::string &pageName) {
     m_teamList = nullptr;
   else if (pageName == "edit_team")
     m_editTeam = nullptr;
+  else if (pageName == "bluetooth_controls")
+    m_bluetoothControlsPage = nullptr;
+  else if (pageName == "bluetooth_device_detail")
+    m_bluetoothDeviceDetailPage = nullptr;
 }
 
 void MainWindow::destroyAllTemporaryPages() {
@@ -1172,6 +1574,8 @@ void MainWindow::destroyAllTemporaryPages() {
   destroyTemporaryPage("edit_theme");
   destroyTemporaryPage("edit_pattern");
   destroyTemporaryPage("lightshow_settings");
+  destroyTemporaryPage("bluetooth_controls");
+  destroyTemporaryPage("bluetooth_device_detail");
 }
 
 void MainWindow::resetIdleClockTimer() {
@@ -1284,8 +1688,16 @@ bool MainWindow::isSportsSchedule(const Schedule &s) {
 }
 
 void MainWindow::restoreManualLedsAsync() {
-  std::thread([this]() {
+  if (m_shuttingDown)
+    return;
+
+  joinManualRestoreThread();
+
+  m_manualRestoreThread = std::thread([this]() {
     for (int i = 0; i < NUM_OF_LEDS; i++) {
+      if (m_shuttingDown)
+        return;
+
       uint32_t mask = (1u << i);
 
       m_teensyClient.applyMaskedRGB(mask,
@@ -1295,7 +1707,12 @@ void MainWindow::restoreManualLedsAsync() {
 
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
-  }).detach();
+  });
+}
+
+void MainWindow::joinManualRestoreThread() {
+  if (m_manualRestoreThread.joinable())
+    m_manualRestoreThread.join();
 }
 
 void MainWindow::applyCurrentScheduleState() {
@@ -1733,6 +2150,7 @@ void MainWindow::showEditThemesPage() {
   LOG_INFO() << "showEditThemesPage requested";
 
   destroyTemporaryPage("edit_themes");
+  ensureThemesLoaded();
 
   m_editThemesPage =
       Gtk::manage(new EditThemes(std::string(SETTINGS_PATH), m_themes));
@@ -1752,6 +2170,7 @@ void MainWindow::showEditThemePage(int themeId) {
   LOG_INFO() << "showEditThemePage requested themeId=" << themeId;
 
   destroyTemporaryPage("edit_theme");
+  ensureThemesLoaded();
 
   auto it = std::find_if(m_themes.begin(), m_themes.end(),
                          [themeId](const Theme &t) { return t.id == themeId; });
@@ -1794,6 +2213,7 @@ void MainWindow::showEditPatternPage() {
   LOG_INFO() << "showEditPatternPage requested";
 
   destroyTemporaryPage("edit_pattern");
+  ensurePatternsLoaded();
 
   m_editPatternPage =
       Gtk::manage(new EditPattern(std::string(ICON_PATH), m_pattern));
@@ -2013,32 +2433,29 @@ void MainWindow::startLightShow() {
 }
 
 void MainWindow::stopLightShow() {
-  std::lock_guard<std::mutex> lock(m_lightShowMutex);
+  {
+    std::lock_guard<std::mutex> lock(m_lightShowMutex);
 
-  if (!m_lightShowRunning)
-    return;
+    if (!m_lightShowRunning)
+      return;
 
-  LOG_INFO() << "Stopping LightShow";
+    LOG_INFO() << "Stopping LightShow";
 
-  if (m_lightShow) {
-    m_lightShow->stop();
-    m_lightShow.reset();
+    if (m_lightShow) {
+      m_lightShow->stop();
+      m_lightShow.reset();
+    }
+
+    m_lightShowRunning = false;
   }
 
-  m_lightShowRunning = false;
   if (m_settingsPage)
     m_settingsPage->set_lightshow_enabled(false);
 
   destroyTemporaryPage("lightshow_settings");
 
-  for (const auto &led : m_ledInfo) {
-    const uint32_t mask =
-        (1u << led.redPin) | (1u << led.grnPin) | (1u << led.bluPin);
-
-    m_teensyClient.applyMaskedRGB(mask, led.redVal, led.grnVal, led.bluVal);
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(40));
-  }
+  if (!m_shuttingDown && m_options.on && m_lightsPowerEnabled)
+    applyCurrentScheduleState();
 }
 
 void MainWindow::sendThemeToTeensyAsync(int themeId,
@@ -2050,7 +2467,10 @@ void MainWindow::sendThemeToTeensyAsync(int themeId,
     return;
   }
 
-  std::thread([this, themeId, themeName, colors]() {
+  if (m_themeSendThread.joinable())
+    m_themeSendThread.join();
+
+  m_themeSendThread = std::thread([this, themeId, themeName, colors]() {
     bool ok = false;
     std::string msg;
 
@@ -2089,18 +2509,28 @@ void MainWindow::sendThemeToTeensyAsync(int themeId,
 
     } while (false);
 
+    if (m_shuttingDown) {
+      m_themeSendBusy = false;
+      return;
+    }
+
     Glib::signal_idle().connect_once([this, msg]() {
+      if (m_shuttingDown)
+        return;
       showShortToast(msg);
       m_themeSendBusy = false;
     });
-  }).detach();
+  });
 }
 
 void MainWindow::sendPatternSpeedsToTeensyAsync(
     const std::vector<Pattern> &patterns) {
   LOG_INFO() << "Sending pattern speeds to Teensy";
 
-  std::thread([this, patterns]() {
+  if (m_patternSendThread.joinable())
+    m_patternSendThread.join();
+
+  m_patternSendThread = std::thread([this, patterns]() {
     bool ok = false;
     std::string msg;
 
@@ -2137,8 +2567,14 @@ void MainWindow::sendPatternSpeedsToTeensyAsync(
 
     } while (false);
 
-    Glib::signal_idle().connect_once([this, msg]() { showShortToast(msg); });
-  }).detach();
+    if (m_shuttingDown)
+      return;
+
+    Glib::signal_idle().connect_once([this, msg]() {
+      if (!m_shuttingDown)
+        showShortToast(msg);
+    });
+  });
 }
 
 void MainWindow::onNewYear(int year) {
@@ -2334,8 +2770,28 @@ MainWindow::~MainWindow() {
   m_shuttingDown = true;
   m_bluetoothState = 0;
 
+  if (m_startupCacheThread.joinable()) {
+    LOG_WARN() << "Startup cache worker still running during shutdown; joining";
+    m_startupCacheThread.join();
+  }
+
+  if (m_startupHardwareThread.joinable()) {
+    LOG_WARN()
+        << "Startup hardware worker still running during shutdown; joining";
+    m_startupHardwareThread.join();
+  }
+
   if (m_sportsAnimationTimeoutConn.connected())
     m_sportsAnimationTimeoutConn.disconnect();
+
+  if (m_sportsGamesConn.connected())
+    m_sportsGamesConn.disconnect();
+  if (m_sportsLiveUpdateConn.connected())
+    m_sportsLiveUpdateConn.disconnect();
+  if (m_sportsHomeScoreConn.connected())
+    m_sportsHomeScoreConn.disconnect();
+  if (m_sportsGameFinishedConn.connected())
+    m_sportsGameFinishedConn.disconnect();
 
   if (m_liveGamePoller)
     m_liveGamePoller->stop();
@@ -2377,6 +2833,12 @@ MainWindow::~MainWindow() {
   if (m_themeConn.connected())
     m_themeConn.disconnect();
 
+  if (m_powerChangedConn.connected())
+    m_powerChangedConn.disconnect();
+
+  if (m_btPowerChangedConn.connected())
+    m_btPowerChangedConn.disconnect();
+
   if (m_newHourConn.connected())
     m_newHourConn.disconnect();
 
@@ -2386,6 +2848,28 @@ MainWindow::~MainWindow() {
   if (m_newMinuteConn.connected())
     m_newMinuteConn.disconnect();
 
+  if (m_scheduleStartedConn.connected())
+    m_scheduleStartedConn.disconnect();
+
+  if (m_scheduleEndedConn.connected())
+    m_scheduleEndedConn.disconnect();
+
+  ClockThread::instance().stop();
+
+  if (m_themeSendThread.joinable()) {
+    LOG_WARN() << "Theme send worker still running during shutdown; joining";
+    m_themeSendThread.join();
+  }
+
+  if (m_patternSendThread.joinable()) {
+    LOG_WARN() << "Pattern send worker still running during shutdown; joining";
+    m_patternSendThread.join();
+  }
+
+  joinManualRestoreThread();
+
+  if (m_lightSensorConn.connected())
+    m_lightSensorConn.disconnect();
   m_lightSensorThread.stop();
 
   if (!setLightsPowerEnabled(false)) {
@@ -2394,10 +2878,21 @@ MainWindow::~MainWindow() {
   }
   m_doorbellThread.stop();
 
+  if (m_doorbellConn.connected())
+    m_doorbellConn.disconnect();
+
+  if (m_mobileOptionsConn.connected())
+    m_mobileOptionsConn.disconnect();
+  if (m_mobileLedsConn.connected())
+    m_mobileLedsConn.disconnect();
+  if (m_mobileSchedulesConn.connected())
+    m_mobileSchedulesConn.disconnect();
+
   if (m_mobileLightsPoller)
     m_mobileLightsPoller->stop();
 
-  m_environmentConn.disconnect();
+  if (m_environmentConn.connected())
+    m_environmentConn.disconnect();
   m_environmentThread.stop();
 
   destroyAllTemporaryPages();

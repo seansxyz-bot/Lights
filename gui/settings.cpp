@@ -58,6 +58,8 @@ Settings::Settings(const std::string &iconPath, Options &opt, bool bluetoothOn,
       ButtonImageMaker::create(settingsPathFromIconPath(iconPath), "LightShow",
                                SETTINGS_EDIT_SIZE),
       SETTINGS_EDIT_SIZE));
+  m_bluetoothControlsBtn = Gtk::manage(
+      new ImageButton(iconPath + "/blue_ctrl_mbc.png", SETTINGS_EDIT_SIZE));
   m_restartBtn = Gtk::manage(
       new ImageButton(iconPath + "/restart.png", SETTINGS_RESTART_SIZE));
   m_okBtn =
@@ -76,6 +78,7 @@ Settings::Settings(const std::string &iconPath, Options &opt, bool bluetoothOn,
 
   m_lightShowBtn->set_sensitive(m_lightShowOn);
   m_rowC.pack_start(*m_lightShowBtn, Gtk::PACK_SHRINK);
+  m_rowC.pack_start(*m_bluetoothControlsBtn, Gtk::PACK_SHRINK);
   m_rowC.pack_start(*m_restartBtn, Gtk::PACK_SHRINK);
 
   m_centBox.pack_start(m_rowA, Gtk::PACK_SHRINK);
@@ -111,6 +114,9 @@ Settings::Settings(const std::string &iconPath, Options &opt, bool bluetoothOn,
 
   m_lightShowBtn->signal_clicked().connect(
       [this]() { m_signalLightShowRequested.emit(); });
+
+  m_bluetoothControlsBtn->signal_clicked().connect(
+      [this]() { m_signalBluetoothControlsRequested.emit(); });
 
   m_restartBtn->signal_clicked().connect(
       [this]() { m_signalRestartRequested.emit(); });
@@ -162,6 +168,10 @@ sigc::signal<void> &Settings::signal_edit_teams_requested() {
 
 sigc::signal<void> &Settings::signal_lightshow_requested() {
   return m_signalLightShowRequested;
+}
+
+sigc::signal<void> &Settings::signal_bluetooth_controls_requested() {
+  return m_signalBluetoothControlsRequested;
 }
 
 sigc::signal<void> &Settings::signal_restart_requested() {

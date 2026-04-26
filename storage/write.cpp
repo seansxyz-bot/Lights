@@ -20,6 +20,7 @@ bool execSQL(sqlite3 *db, const char *sql) {
 
 int writeLEDInfo(std::string path, std::vector<LEDData> data) {
   const std::string dbPath = path + "/lights.db";
+  ensureCoreSchema(dbPath);
 
   sqlite3 *db = nullptr;
   if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
@@ -102,6 +103,7 @@ int writeLEDInfo(std::string path, std::vector<LEDData> data) {
 
 int writeOptions(std::string path, Options data) {
   const std::string dbPath = path + "/lights.db";
+  ensureCoreSchema(dbPath);
 
   sqlite3 *db = nullptr;
   if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
@@ -125,7 +127,6 @@ int writeOptions(std::string path, Options data) {
   }
 
   auto writeOne = [&](const std::string &name, int value) -> bool {
-    std::cout << "ONN - " << name << " - " << value << std::endl;
     sqlite3_reset(stmt);
     sqlite3_clear_bindings(stmt);
 
@@ -154,6 +155,7 @@ int writeOptions(std::string path, Options data) {
 
 int writeSchedule(std::string path, std::vector<Schedule> data) {
   const std::string dbPath = path + "/lights.db";
+  ensureCoreSchema(dbPath);
 
   sqlite3 *db = nullptr;
   if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
@@ -229,6 +231,7 @@ int writeSchedule(std::string path, std::vector<Schedule> data) {
 
 int writeThemeColors(std::string path, const std::vector<Theme> &themes) {
   const std::string dbPath = path + "/lights.db";
+  ensureCoreSchema(dbPath);
 
   sqlite3 *db = nullptr;
   if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
@@ -309,6 +312,7 @@ int writeThemeColors(std::string path, const std::vector<Theme> &themes) {
 
 int writePatternSpeeds(std::string path, const std::vector<Pattern> &patterns) {
   const std::string dbPath = path + "/lights.db";
+  ensureCoreSchema(dbPath);
 
   sqlite3 *db = nullptr;
   if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {

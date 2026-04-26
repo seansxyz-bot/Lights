@@ -6,6 +6,7 @@
 
 std::vector<LEDData> readLEDInfo(std::string path) {
   const std::string dbPath = path + "/lights.db";
+  ensureCoreSchema(dbPath);
   std::vector<LEDData> data;
 
   sqlite3 *db = nullptr;
@@ -60,6 +61,7 @@ std::vector<LEDData> readLEDInfo(std::string path) {
 
 Options readOptions(std::string path) {
   const std::string dbPath = path + "/lights.db";
+  ensureCoreSchema(dbPath);
   Options opts{};
 
   sqlite3 *db = nullptr;
@@ -111,6 +113,7 @@ Options readOptions(std::string path) {
 std::vector<Schedule> readSchedule(std::string path) {
   std::vector<Schedule> data;
   const std::string dbPath = path + "/lights.db";
+  ensureCoreSchema(dbPath);
 
   sqlite3 *db = nullptr;
   if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
@@ -159,6 +162,7 @@ std::vector<Schedule> readSchedule(std::string path) {
 
 std::vector<Theme> readThemeColors(const std::string &path) {
   const std::string dbPath = path + "/lights.db";
+  ensureCoreSchema(dbPath);
   std::vector<Theme> out;
 
   sqlite3 *db = nullptr;
@@ -430,6 +434,7 @@ bool loadLedRestoreState(const std::string &dbPath,
 
 std::vector<Pattern> readPatternSpeeds(std::string path) {
   const std::string dbPath = path + "/lights.db";
+  ensureCoreSchema(dbPath);
   std::vector<Pattern> patterns;
 
   sqlite3 *db = nullptr;
