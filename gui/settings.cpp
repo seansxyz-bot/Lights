@@ -38,6 +38,8 @@ Settings::Settings(const std::string &iconPath, Options &opt, bool bluetoothOn)
 
   m_editThemeBtn =
       Gtk::manage(new ImageButton(iconPath + "/dt.png", SETTINGS_EDIT_SIZE));
+  m_editPatternBtn =
+      Gtk::manage(new ImageButton(iconPath + "/dp.png", SETTINGS_EDIT_SIZE));
   m_editTeamsBtn = Gtk::manage(
       new ImageButton(iconPath + "/editteams.png", SETTINGS_EDIT_SIZE));
   m_restartBtn = Gtk::manage(
@@ -53,6 +55,7 @@ Settings::Settings(const std::string &iconPath, Options &opt, bool bluetoothOn)
   m_rowA.pack_start(*m_bluetoothBtn, Gtk::PACK_SHRINK);
 
   m_rowB.pack_start(*m_editThemeBtn, Gtk::PACK_SHRINK);
+  m_rowB.pack_start(*m_editPatternBtn, Gtk::PACK_SHRINK);
   m_rowB.pack_start(*m_editTeamsBtn, Gtk::PACK_SHRINK);
 
   m_rowC.pack_start(*m_restartBtn, Gtk::PACK_SHRINK);
@@ -81,6 +84,9 @@ Settings::Settings(const std::string &iconPath, Options &opt, bool bluetoothOn)
 
   m_editThemeBtn->signal_clicked().connect(
       [this]() { m_signalEditThemeRequested.emit(); });
+
+  m_editPatternBtn->signal_clicked().connect(
+      [this]() { m_signalEditPatternRequested.emit(); });
 
   m_editTeamsBtn->signal_clicked().connect(
       [this]() { m_signalEditTeamsRequested.emit(); });
@@ -117,6 +123,10 @@ sigc::signal<void, bool> &Settings::signal_bluetooth_toggled() {
 
 sigc::signal<void> &Settings::signal_edit_theme_requested() {
   return m_signalEditThemeRequested;
+}
+
+sigc::signal<void> &Settings::signal_edit_pattern_requested() {
+  return m_signalEditPatternRequested;
 }
 
 sigc::signal<void> &Settings::signal_edit_teams_requested() {

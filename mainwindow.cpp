@@ -103,6 +103,7 @@ void MainWindow::loadSettings() {
   std::cout << "ONNNN - " << m_options.on << std::endl;
   m_schedule = readSchedule(std::string(SETTINGS_PATH));
   m_themes = readThemeColors(std::string(SETTINGS_PATH));
+  m_pattern = readPatternSpeeds(std::string(SETTINGS_PATH));
 
   std::time_t now = std::time(nullptr);
   std::tm local_tm{};
