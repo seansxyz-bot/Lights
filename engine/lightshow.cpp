@@ -534,6 +534,11 @@ void LightShow::printFrame_(const LedFrame &frame) const {
   std::cout << "]\n";
 }
 
+void LightShow::setFrameSender(FrameSender sender) {
+  std::lock_guard<std::mutex> lk(frame_sender_mtx_);
+  frame_sender_ = std::move(sender);
+}
+
 void LightShow::renderLoop_() {
   const auto tick = std::chrono::duration_cast<Clock::duration>(
       std::chrono::duration<double>(1.0 / FPS_LED));
@@ -565,7 +570,18 @@ void LightShow::renderLoop_() {
 
     const double t = std::chrono::duration<double>(now - start_time).count();
     LedFrame frame = buildFrame_(left, right, t);
-    printFrame_(frame);
+
+    FrameSender sender;
+    {
+      std::lock_guard<std::mutex> lk(frame_sender_mtx_);
+      sender = frame_sender_;
+    }
+
+    if (sender) {
+      sender(frame);
+    } else {
+      printFrame_(frame);
+    }
   }
 
   std::cerr << "[LightShow] render loop stopped\n";

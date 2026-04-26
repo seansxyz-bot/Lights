@@ -264,6 +264,23 @@ bool TeensyClient::sendPatternSpeeds(const std::vector<Pattern> &patterns) {
   return endFile(kPatternSpeedCount);
 }
 
+bool TeensyClient::sendLedFrame(
+    const std::vector<std::array<uint8_t, 3>> &frame) {
+
+  const size_t count = std::min(frame.size(), static_cast<size_t>(NUM_OF_LEDS));
+
+  for (size_t i = 0; i < count; ++i) {
+    const auto &rgb = frame[i];
+
+    if (!write8(CMD_LED_FRAME, static_cast<uint8_t>(i), rgb[0], rgb[1], rgb[2],
+                0, 0, 0)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 // ============================================================
 
 bool TeensyClient::endFile(uint8_t expectedLines) {

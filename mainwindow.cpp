@@ -1461,6 +1461,13 @@ void MainWindow::startLightShow() {
   m_lightShow = std::make_unique<LightShow>(
       NUM_OF_LEDS, "alsa_output.platform-soc_sound.pro-output-0.monitor");
 
+  m_lightShow->setFrameSender([this](const LightShow::LedFrame &frame) {
+    if (!m_lightShowRunning)
+      return false;
+
+    return m_teensyClient.sendLedFrame(frame);
+  });
+
   if (!m_lightShow->start()) {
     LOG_ERROR() << "LightShow failed to start";
     m_lightShow.reset();

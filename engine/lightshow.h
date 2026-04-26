@@ -17,6 +17,7 @@
 #include <vector>
 
 #include <fftw3.h>
+#include <functional>
 #include <pulse/pulseaudio.h>
 
 struct LightShowTunables {
@@ -50,6 +51,9 @@ struct LightShowTunables {
 class LightShow {
 public:
   using Clock = std::chrono::steady_clock;
+  using RGB = std::array<uint8_t, 3>;
+  using LedFrame = std::vector<RGB>;
+  using FrameSender = std::function<bool(const LedFrame &)>;
 
   explicit LightShow(size_t num_leds_total = 19,
                      const std::string &monitor_source =
@@ -80,6 +84,7 @@ public:
     cfg_.band_gain_mid.store(mid);
     cfg_.band_gain_high.store(high);
   }
+  void setFrameSender(FrameSender sender);
 
   LightShowTunables cfg_;
 
@@ -115,9 +120,6 @@ private:
     float phase = 0.0f;
     float drift_speed = 1.0f;
   };
-
-  using RGB = std::array<uint8_t, 3>;
-  using LedFrame = std::vector<RGB>;
 
   static float clamp01_(float x);
   static uint8_t to8_(float x);
@@ -170,6 +172,9 @@ private:
   std::vector<float> window_;
 
   std::vector<float> magL_, magR_;
+
+  mutable std::mutex frame_sender_mtx_;
+  FrameSender frame_sender_;
 
   std::atomic<float> L_bass_{0.0f}, L_mid_{0.0f}, L_high_{0.0f}, L_base_{0.0f};
   std::atomic<float> R_bass_{0.0f}, R_mid_{0.0f}, R_high_{0.0f}, R_base_{0.0f};

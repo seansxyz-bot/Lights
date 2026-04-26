@@ -21,6 +21,7 @@ public:
   enum : uint8_t {
     CMD_APPLY_MASK = 0x15,
     CMD_PATTERN_SPEED = 0x16,
+    CMD_LED_FRAME = 0x17,
 
     CMD_BEGIN_FILE = 0x20,
     CMD_FILE_CHUNK = 0x21,
@@ -74,6 +75,8 @@ public:
 
   bool sendPatternSpeed(uint8_t speed);
   bool sendPatternSpeeds(const std::vector<Pattern> &patterns);
+
+  bool sendLedFrame(const std::vector<std::array<uint8_t, 3>> &frame);
 
   bool endFile(uint8_t expectedLines);
   bool abortFile();
