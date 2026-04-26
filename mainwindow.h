@@ -16,6 +16,7 @@
 #include "drivers/power/powerswitch.h"
 #include "engine/lightshow.h"
 #include "gui/clock.h"
+#include "gui/editpattern.h"
 #include "gui/editteam.h"
 #include "gui/editthemepage.h"
 #include "gui/editthemes.h"
@@ -24,6 +25,7 @@
 #include "gui/themes.h"
 #include "gui/toastmessage.h"
 #include "threads/doorbellthread.h"
+#include "threads/environmentthread.h"
 #include "threads/lightsensorthread.h"
 #include "threads/mobilelightspoller.h"
 #include "utils/parserhelper.h"
@@ -43,6 +45,7 @@ class DeltaGroup;
 class Engine;
 class EditThemes;
 class EditThemePage;
+class EditPattern;
 
 enum class LedOverrideMode { None, Theme, LightShow };
 
@@ -60,12 +63,16 @@ private:
   std::atomic<bool> m_shuttingDown{false};
   std::atomic<bool> m_themeSendBusy{false};
   std::mutex m_lightShowMutex;
+
   bool isSportsSchedule(const Schedule &s);
   void applyCurrentScheduleState();
   void restoreManualLedsAsync();
 
   void sendThemeToTeensyAsync(int themeId, const std::string &themeName,
                               const std::vector<RGB_Color> &colors);
+
+  void sendPatternSpeedsToTeensyAsync(const std::vector<Pattern> &patterns);
+
   std::unique_ptr<LightShow> m_lightShow;
   bool m_lightShowRunning = false;
 
@@ -109,8 +116,10 @@ private:
   Engine *m_gameDayPage = nullptr;
   EditThemes *m_editThemesPage = nullptr;
   EditThemePage *m_editThemePage = nullptr;
+  EditPattern *m_editPatternPage = nullptr;
   TeamList *m_teamList = nullptr;
   EditTeam *m_editTeam = nullptr;
+
   std::atomic<bool> m_btBusy{false};
   std::thread m_btWorker;
   Glib::Dispatcher m_btUiDispatcher;
@@ -134,6 +143,7 @@ private:
   // ---------- app threads ----------
   DoorbellThread m_doorbellThread;
   LightSensorThread m_lightSensorThread;
+  EnvironmentThread m_environmentThread;
   std::unique_ptr<MobileLightsPoller> m_mobileLightsPoller;
 
   // ---------- app connections ----------
@@ -144,6 +154,7 @@ private:
   sigc::connection m_scheduledEventConn;
   sigc::connection m_doorbellConn;
   sigc::connection m_lightSensorConn;
+  sigc::connection m_environmentConn;
   sigc::connection m_bluetoothPollConn;
   sigc::connection m_toastHideConn;
 
@@ -158,9 +169,11 @@ private:
   void buildStack();
   void buildPages();
   void connectPageSignals();
+
   void onMobileOptionsChanged(const Options &options);
   void onMobileLEDsChanged(const std::vector<LEDData> &ledInfo);
   void onMobileSchedulesChanged(const std::vector<Schedule> &schedule);
+
   void disconnectAllBluetoothDevices();
   bool onBluetoothPollTick();
   void stopBluetoothPolling();
@@ -204,6 +217,8 @@ private:
   std::string addHours(const std::string &time24, int hours);
   void onDoorbellChanged(bool pressed);
   void onLightSensorChanged(bool sensorWantsLightsOn);
+  void onEnvironmentChanged(EnvironmentThread::Reading reading);
+  EnvironmentThread::Reading m_lastEnvironmentReading{};
 
   void createTeamListPage();
   void createEditTeamPage(const TeamRecord &team);
@@ -215,6 +230,8 @@ private:
   // ---------- helpers ----------
   void showEditThemesPage();
   void showEditThemePage(int themeId);
+  void showEditPatternPage();
+
   void updateOptions(const Options &options);
   void updateScheduleEntry(int index, const Schedule &entry);
   void getAvgColor(int allOrGroup, int &r, int &g, int &b);

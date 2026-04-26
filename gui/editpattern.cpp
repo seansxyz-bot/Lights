@@ -126,10 +126,18 @@ Gtk::Box *EditPattern::makeCell(const std::string &label, int patternId) {
 void EditPattern::beginEdit(int patternId) {
   m_editingPatternId = patternId;
 
+  // Remove normal edit-pattern UI
+  remove(m_centBox);
+
+  // Clean up any existing keypad
   if (m_keypad) {
-    m_centBox.remove(*m_keypad);
+    m_keypadBox.remove(*m_keypad);
     m_keypad = nullptr;
   }
+
+  m_keypadBox.set_halign(Gtk::ALIGN_CENTER);
+  m_keypadBox.set_valign(Gtk::ALIGN_START);
+  m_keypadBox.set_margin_top(EDIT_PATTERN_TOP_MARGIN);
 
   m_keypad = Gtk::manage(new KeyPad(m_iconPath, speedFor(patternId),
                                     EDIT_PATTERN_KEYPAD_SIZE, 100));
@@ -141,15 +149,20 @@ void EditPattern::beginEdit(int patternId) {
     m_signalPatternSpeedPreview.emit(m_editingPatternId, speed);
 
     if (m_keypad) {
-      m_centBox.remove(*m_keypad);
+      m_keypadBox.remove(*m_keypad);
       m_keypad = nullptr;
     }
+
+    remove(m_keypadBox);
+    pack_start(m_centBox, Gtk::PACK_SHRINK);
 
     m_editingPatternId = -1;
     show_all_children();
   });
 
-  m_centBox.pack_start(*m_keypad, Gtk::PACK_SHRINK);
+  pack_start(m_keypadBox, Gtk::PACK_SHRINK);
+  m_keypadBox.pack_start(*m_keypad, Gtk::PACK_SHRINK);
+
   show_all_children();
 }
 

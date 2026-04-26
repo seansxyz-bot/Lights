@@ -1,7 +1,7 @@
 #include "mainwindow.h"
 
+#include "drivers/i2c/bme280.h"
 #include "drivers/network/httphelper.h"
-#include "drivers/sensors/bme280.h"
 #include "engine/engine.h"
 #include "gui/deltaall.h"
 #include "gui/deltagroup.h"
@@ -134,6 +134,7 @@ void MainWindow::startThreads() {
   if (m_options.sensor) {
     m_lightSensorThread.start();
   }
+  m_environmentThread.start();
 }
 
 void MainWindow::startConnections() {
@@ -188,6 +189,9 @@ void MainWindow::startConnections() {
 
   m_lightSensorConn = m_lightSensorThread.signal_sensor_changed().connect(
       sigc::mem_fun(*this, &MainWindow::onLightSensorChanged));
+
+  m_environmentConn = m_environmentThread.signal_environment_changed().connect(
+      sigc::mem_fun(*this, &MainWindow::onEnvironmentChanged));
 }
 
 void MainWindow::buildShell() {
@@ -265,38 +269,13 @@ void MainWindow::connectPageSignals() {
         [this]() { dismissClockPage(); });
 
     m_clockPage->setEnvProvider([this](float &tempF, float &humidity) -> bool {
-
 #ifdef MOCK_HARDWARE
-      // Ubuntu / VM mode
       tempF = 71.8f;
       humidity = 43.0f;
       return true;
 #else
-      // Real Pi hardware
-      static auto lastRead =
-          std::chrono::steady_clock::now() - std::chrono::minutes(10);
-      static float cachedTempF = 72.0f;
-      static float cachedHumidity = 40.0f;
-
-      auto now = std::chrono::steady_clock::now();
-
-      if (now - lastRead >= std::chrono::minutes(10)) {
-        bme280_env_data env{};
-
-        if (bme280_read_environment(&env)) {
-          cachedTempF = (env.temperature_c * 9.0f / 5.0f) + 32.0f;
-          cachedHumidity = env.humidity;
-          lastRead = now;
-
-          LOG_INFO() << "Env updated: " << cachedTempF << "F, "
-                     << cachedHumidity << "%";
-        } else {
-          LOG_ERROR() << "BME280 read failed";
-        }
-      }
-
-      tempF = cachedTempF;
-      humidity = cachedHumidity;
+      tempF = m_lastEnvironmentReading.temperatureF;
+      humidity = m_lastEnvironmentReading.humidity;
       return true;
 #endif
     });
@@ -318,6 +297,17 @@ void MainWindow::onLightSensorChanged(bool sensorWantsLightsOn) {
   }
 
   updateLightShowState();
+}
+
+void MainWindow::onEnvironmentChanged(EnvironmentThread::Reading reading) {
+  m_lastEnvironmentReading = reading;
+
+  LOG_INFO() << "Environment: " << reading.temperatureF << "F, "
+             << reading.humidity << "%, " << reading.pressureHPa << " hPa";
+
+  if (m_clockPage) {
+    m_clockPage->setTempHumidity(reading.temperatureF, reading.humidity);
+  }
 }
 
 void MainWindow::onMobileOptionsChanged(const Options &options) {
@@ -437,6 +427,9 @@ void MainWindow::showSettingsPage() {
 
   m_settingsPage->signal_edit_theme_requested().connect(
       [this]() { showEditThemesPage(); });
+
+  m_settingsPage->signal_edit_pattern_requested().connect(
+      [this]() { showEditPatternPage(); });
 
   m_settingsPage->signal_edit_teams_requested().connect(
       [this]() { showTeamListPage(); });
@@ -910,6 +903,8 @@ void MainWindow::destroyTemporaryPage(const std::string &pageName) {
     m_editThemesPage = nullptr;
   else if (pageName == "edit_theme")
     m_editThemePage = nullptr;
+  else if (pageName == "edit_pattern")
+    m_editPatternPage = nullptr;
   else if (pageName == "team_list")
     m_teamList = nullptr;
   else if (pageName == "edit_team")
@@ -925,6 +920,7 @@ void MainWindow::destroyAllTemporaryPages() {
   destroyTemporaryPage("game_day");
   destroyTemporaryPage("edit_themes");
   destroyTemporaryPage("edit_theme");
+  destroyTemporaryPage("edit_pattern");
 }
 
 void MainWindow::resetIdleClockTimer() {
@@ -1339,6 +1335,57 @@ void MainWindow::showEditThemePage(int themeId) {
   m_stack.queue_draw();
 }
 
+void MainWindow::showEditPatternPage() {
+  LOG_INFO() << "showEditPatternPage requested";
+
+  destroyTemporaryPage("edit_pattern");
+
+  m_editPatternPage =
+      Gtk::manage(new EditPattern(std::string(ICON_PATH), m_pattern));
+
+  m_editPatternPage->signal_pattern_speed_preview().connect(
+      [this](int patternId, int speed) {
+        LOG_INFO() << "Pattern speed preview id=" << patternId
+                   << " speed=" << speed;
+
+        // Live preview only. No DB save here.
+        m_teensyClient.applyPatternSpeed(static_cast<uint8_t>(patternId),
+                                         static_cast<uint8_t>(speed));
+      });
+
+  m_editPatternPage->signal_save().connect(
+      [this](const std::vector<Pattern> &patterns) {
+        LOG_INFO() << "Saving pattern speeds";
+
+        m_pattern = patterns;
+        writePatternSpeeds(std::string(SETTINGS_PATH), m_pattern);
+
+        // After save, turn active pattern off.
+        m_options.ptrn = 0;
+        writeOptions(std::string(SETTINGS_PATH), m_options);
+        m_teensyClient.applyThemePattern(m_options.theme, 0);
+
+        // Send saved speeds to Teensy.
+        sendPatternSpeedsToTeensyAsync(m_pattern);
+
+        showSettingsPage();
+      });
+
+  m_editPatternPage->signal_cancel().connect([this]() {
+    LOG_INFO() << "EditPattern canceled";
+
+    // Discard unsaved speed edits and restore current saved pattern/theme.
+    m_teensyClient.applyThemePattern(m_options.theme, m_options.ptrn);
+
+    showSettingsPage();
+  });
+
+  m_stack.add(*m_editPatternPage, "edit_pattern");
+  m_stack.show_all_children();
+  m_stack.set_visible_child(*m_editPatternPage);
+  m_stack.queue_draw();
+}
+
 void MainWindow::showShortToast(const std::string &message) {
   if (message.empty())
     return;
@@ -1500,6 +1547,51 @@ void MainWindow::sendThemeToTeensyAsync(int themeId,
       showShortToast(msg);
       m_themeSendBusy = false;
     });
+  }).detach();
+}
+
+void MainWindow::sendPatternSpeedsToTeensyAsync(
+    const std::vector<Pattern> &patterns) {
+  LOG_INFO() << "Sending pattern speeds to Teensy";
+
+  std::thread([this, patterns]() {
+    bool ok = false;
+    std::string msg;
+
+    do {
+      if (!m_teensyClient.sendPatternSpeeds(patterns)) {
+        msg = "Failed to send pattern speeds";
+        break;
+      }
+
+      uint8_t status = TeensyClient::FILE_ERROR;
+
+      for (int i = 0; i < 20; ++i) {
+        if (!m_teensyClient.readFileStatus(status)) {
+          msg = "Failed to read Teensy pattern status";
+          break;
+        }
+
+        if (status == TeensyClient::FILE_SUCCESS) {
+          ok = true;
+          msg = "Pattern speeds updated";
+          break;
+        }
+
+        if (status == TeensyClient::FILE_ERROR) {
+          msg = "Pattern speed update failed";
+          break;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+      }
+
+      if (!ok && msg.empty())
+        msg = "Pattern speed update timed out";
+
+    } while (false);
+
+    Glib::signal_idle().connect_once([this, msg]() { showShortToast(msg); });
   }).detach();
 }
 
@@ -1749,6 +1841,9 @@ MainWindow::~MainWindow() {
 
   if (m_mobileLightsPoller)
     m_mobileLightsPoller->stop();
+
+  m_environmentConn.disconnect();
+  m_environmentThread.stop();
 
   destroyAllTemporaryPages();
 

@@ -16,10 +16,11 @@
 
 class TeensyClient {
 public:
-  std::atomic<bool> on{false}; // thread-safe power gate
+  std::atomic<bool> on{false};
 
   enum : uint8_t {
     CMD_APPLY_MASK = 0x15,
+    CMD_PATTERN_SPEED = 0x16,
 
     CMD_BEGIN_FILE = 0x20,
     CMD_FILE_CHUNK = 0x21,
@@ -55,6 +56,9 @@ public:
   bool applyMaskedRGB(uint32_t mask24, uint8_t r, uint8_t g, uint8_t b);
   bool applyThemePattern(uint8_t themeId, uint8_t patternId);
 
+  // Live preview only. Does NOT save on Teensy.
+  bool applyPatternSpeed(uint8_t patternId, uint8_t speed);
+
   // --- read requests ---
   bool readWakeReady(bool &ready);
   bool readLedState(std::vector<uint8_t> &out_rgb);
@@ -64,11 +68,12 @@ public:
   // --- file transfer ---
   bool beginFile(uint8_t fileType, uint8_t fileId, uint8_t lineCount,
                  uint8_t version = 1);
+
   bool sendThemeColor(uint8_t r, uint8_t g, uint8_t b);
   bool sendThemeColors(uint8_t themeId, const std::vector<RGB_Color> &colors);
 
-  bool sendPatternSpeed(uint8_t speed);
-  bool sendPatternSpeeds(uint8_t patternId, const std::vector<uint8_t> &speeds);
+  bool sendPatternSpeed(uint8_t patternId, uint8_t speed);
+  bool sendPatternSpeeds(const std::vector<Pattern> &patterns);
 
   bool endFile(uint8_t expectedLines);
   bool abortFile();

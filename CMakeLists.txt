@@ -43,11 +43,11 @@ set(SOURCES
     bluetooth/btcontrol.h
 
     drivers/gpio/gpiohelper.h
+    drivers/i2c/bme280.h
     drivers/i2c/teensyclient.h
     drivers/network/httphelper.h
     drivers/power/ampswitch.h
     drivers/power/powerswitch.h
-    drivers/sensors/bme280.h
 
     engine/engine.h
     engine/lightshow.h
@@ -95,11 +95,11 @@ set(SOURCES
     bluetooth/btcontrol.cpp
 
     drivers/gpio/gpiohelper.cpp
+    drivers/i2c/bme280.c
     drivers/i2c/teensyclient.cpp
     drivers/network/httphelper.cpp
     drivers/power/ampswitch.cpp
     drivers/power/powerswitch.cpp
-    drivers/sensors/bme280.c
 
     engine/engine.cpp
     engine/lightshow.cpp
@@ -139,6 +139,7 @@ add_executable(LightingControl ${SOURCES}
     utils/ui_metrics.h
     threads/lightsensorthread.h threads/lightsensorthread.cpp
     gui/editpattern.h gui/editpattern.cpp
+    threads/environmentthread.h threads/environmentthread.cpp
 )
 
 set_target_properties(LightingControl PROPERTIES

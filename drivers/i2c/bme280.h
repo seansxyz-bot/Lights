@@ -1,15 +1,10 @@
 #ifndef __BME280_H__
 #define __BME280_H__
 
-#include <stdbool.h>
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#define BME280_I2C_DEVICE "/dev/i2c-1"
 #define BME280_ADDRESS 0x76
+#define BME280_I2C_DEVICE "/dev/i2c-1"
 
 #define BME280_REGISTER_DIG_T1 0x88
 #define BME280_REGISTER_DIG_T2 0x8A
@@ -30,16 +25,9 @@ extern "C" {
 #define BME280_REGISTER_DIG_H5 0xE5
 #define BME280_REGISTER_DIG_H6 0xE7
 #define BME280_REGISTER_CHIPID 0xD0
-#define BME280_REGISTER_VERSION 0xD1
-#define BME280_REGISTER_SOFTRESET 0xE0
-#define BME280_RESET 0xB6
-#define BME280_REGISTER_CAL26 0xE1
 #define BME280_REGISTER_CONTROLHUMID 0xF2
 #define BME280_REGISTER_CONTROL 0xF4
-#define BME280_REGISTER_CONFIG 0xF5
 #define BME280_REGISTER_PRESSUREDATA 0xF7
-#define BME280_REGISTER_TEMPDATA 0xFA
-#define BME280_REGISTER_HUMIDDATA 0xFD
 
 #define MEAN_SEA_LEVEL_PRESSURE 1013.25
 
@@ -83,17 +71,14 @@ typedef struct {
   uint32_t humidity;
 } bme280_raw_data;
 
-typedef struct {
-  float temperature_c;
-  float humidity;
-  float pressure_hpa;
-  float altitude_m;
-} bme280_env_data;
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-bool bme280_open(int *fd_out);
-void bme280_close(int fd);
-
-bool bme280_read_environment(bme280_env_data *out);
+int bme280Open(void);
+void bme280Close(int fd);
+int bme280Configure(int fd);
+int bme280ReadChipId(int fd);
 
 void readCalibrationData(int fd, bme280_calib_data *cal);
 int32_t getTemperatureCalibration(bme280_calib_data *cal, int32_t adc_T);
