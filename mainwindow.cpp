@@ -341,15 +341,15 @@ void MainWindow::startStartupHardwareApply() {
       sensorRead = true;
     }
 
-    bool powerReady = false;
-    if (!m_shuttingDown)
-      powerReady = setLightsPowerEnabled(desiredPowerOn);
-
     if (sensorRead) {
       Options updated = startupOptions;
       updated.on = sensorWantedOn ? 1 : 0;
       writeOptions(SETTINGS_PATH, updated);
     }
+
+    bool powerReady = false;
+    if (!m_shuttingDown)
+      powerReady = setLightsPowerEnabled(desiredPowerOn);
 
     {
       std::lock_guard<std::mutex> lock(m_startupMutex);
@@ -1392,10 +1392,12 @@ void MainWindow::dismissClockPage() {
 
   m_clockVisible = false;
 
-  if (m_clockPage)
+  if (m_clockPage) {
     m_clockPage->stop();
-  else
+    m_clockPage->resetPosition();
+  } else {
     LOG_ERROR() << "m_clockPage is null in dismissClockPage()";
+  }
 
   showHomePage();
 }

@@ -55,6 +55,18 @@ public:
 
 private:
   void on_save();
+  bool isAddMode() const;
+  void buildAddWizardUi();
+  void buildEditWizardUi();
+  void showAddStep(int step);
+  void updateAddNavButtons();
+  void onAddBack();
+  void onAddNext();
+  void showEditStep(int step);
+  void updateEditNavButtons();
+  void onEditPrev();
+  void onEditNext();
+  bool validateAddStep(int step, std::string &message) const;
 
   static bool hexToRgb(const std::string &hex, int &r, int &g, int &b);
   static std::string normalizeTeamFileName(const std::string &name);
@@ -94,6 +106,20 @@ private:
   Gtk::Box m_formBox{Gtk::ORIENTATION_VERTICAL};
   Gtk::Grid m_grid;
   Gtk::Box m_buttonBox{Gtk::ORIENTATION_HORIZONTAL};
+  Gtk::Stack m_addStack;
+  Gtk::Box m_addPageBasic{Gtk::ORIENTATION_VERTICAL};
+  Gtk::Box m_addPageApi{Gtk::ORIENTATION_VERTICAL};
+  Gtk::Box m_addPageUrls{Gtk::ORIENTATION_VERTICAL};
+  Gtk::Grid m_addBasicGrid;
+  Gtk::Grid m_addApiGrid;
+  Gtk::Grid m_addUrlsGrid;
+  Gtk::Box m_addNavBox{Gtk::ORIENTATION_HORIZONTAL};
+  Gtk::Stack m_editStack;
+  Gtk::Box m_editPageMain{Gtk::ORIENTATION_VERTICAL};
+  Gtk::Box m_editPageDetails{Gtk::ORIENTATION_HORIZONTAL};
+  Gtk::Grid m_editMainGrid;
+  Gtk::Grid m_editDetailsGrid;
+  Gtk::Box m_editNavBox{Gtk::ORIENTATION_HORIZONTAL};
 
   Gtk::Entry m_nameEntry;
   Gtk::Entry m_leagueEntry;
@@ -137,6 +163,16 @@ private:
   ImageButton *m_okBtn = nullptr;
   ImageButton *m_deleteBtn = nullptr;
   ImageButton *m_cancelBtn = nullptr;
+  Gtk::Button m_addBackBtn{"Back"};
+  Gtk::Button m_addNextBtn{"Next"};
+  Gtk::Button m_addCancelBtn{"Cancel"};
+  Gtk::Button m_addSaveBtn{"Save"};
+  int m_addStep = 0;
+  Gtk::Button m_editPrevBtn{"Prev"};
+  Gtk::Button m_editNextBtn{"Next"};
+  Gtk::Button m_editCancelBtn{"Cancel"};
+  Gtk::Button m_editSaveBtn{"Save"};
+  int m_editStep = 0;
 
   sigc::signal<void> m_signalSaved;
   sigc::signal<void> m_signalDeleted;

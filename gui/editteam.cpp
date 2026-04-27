@@ -26,6 +26,12 @@ Gtk::Box *make_hex_entry_row(Gtk::Entry &entry) {
   return box;
 }
 
+void attach_row(Gtk::Grid &grid, int &row, const std::string &label,
+                Gtk::Widget &widget) {
+  grid.attach(*make_label(label), 0, row, 1, 1);
+  grid.attach(widget, 1, row++, 1, 1);
+}
+
 std::string rgbToHex(uint8_t r, uint8_t g, uint8_t b) {
   std::ostringstream ss;
   ss << std::uppercase << std::hex << std::setfill('0') << std::setw(2)
@@ -64,6 +70,13 @@ EditTeam::EditTeam(const std::string &iconPath, const std::string &teamsDbPath,
   m_iconPathEntry.set_text(m_team.iconPath);
   m_displayOrderEntry.set_text(std::to_string(m_team.displayOrder));
   m_enabledCheck.set_active(m_team.enabled != 0);
+  m_nextGameUrlEntry.set_width_chars(28);
+  m_liveGameUrlEntry.set_width_chars(28);
+
+  if (isAddMode()) {
+    buildAddWizardUi();
+    return;
+  }
 
   m_color1Entry.set_max_length(6);
   m_color2Entry.set_max_length(6);
@@ -88,75 +101,68 @@ EditTeam::EditTeam(const std::string &iconPath, const std::string &teamsDbPath,
     }
   }
 
-  m_bodyBox.set_spacing(EDITTEAM_BODY_SPACING);
-  m_bodyBox.set_halign(Gtk::ALIGN_CENTER);
-  m_bodyBox.set_valign(Gtk::ALIGN_CENTER);
+  buildEditWizardUi();
+}
 
-  m_formBox.set_spacing(EDITTEAM_FORM_SPACING);
-  m_formBox.set_halign(Gtk::ALIGN_CENTER);
+void EditTeam::setLogoStatus(const std::string &text) {
+  m_logoStatusLabel.set_text(text);
+}
+
+void EditTeam::showLogoLoading() { setLogoStatus("Loading image..."); }
+
+void EditTeam::showLogoInvalid() { setLogoStatus("Invalid image link"); }
+
+void EditTeam::showLogoEmpty() { setLogoStatus("No image selected"); }
+
+bool EditTeam::isAddMode() const { return m_team.id == 0; }
+
+void EditTeam::buildEditWizardUi() {
+  LOG_INFO() << "EditTeam edit wizard";
+
+  auto setupGrid = [](Gtk::Grid &grid) {
+    grid.set_row_spacing(EDITTEAM_GRID_ROW_SPACING);
+    grid.set_column_spacing(EDITTEAM_GRID_COL_SPACING);
+    grid.set_halign(Gtk::ALIGN_CENTER);
+    grid.set_valign(Gtk::ALIGN_START);
+  };
+
+  setupGrid(m_editMainGrid);
+  setupGrid(m_editDetailsGrid);
+
+  m_gameDayAnimationsEntry.set_width_chars(28);
+  m_homeScoreAnimationsEntry.set_width_chars(28);
+  m_blowoutAnimationsEntry.set_width_chars(28);
+  m_lopsidedAnimationsEntry.set_width_chars(28);
 
   int row = 0;
-  m_grid.attach(*make_label("Name"), 0, row, 1, 1);
-  m_grid.attach(m_nameEntry, 1, row++, 1, 1);
+  attach_row(m_editMainGrid, row, "Name", m_nameEntry);
+  attach_row(m_editMainGrid, row, "League", m_leagueEntry);
+  attach_row(m_editMainGrid, row, "Team Code", m_teamCodeEntry);
+  attach_row(m_editMainGrid, row, "Home/Away", m_homeAwayEntry);
+  attach_row(m_editMainGrid, row, "API Team ID", m_apiTeamIdEntry);
+  attach_row(m_editMainGrid, row, "Enabled", m_enabledCheck);
+  attach_row(m_editMainGrid, row, "Display Order", m_displayOrderEntry);
+  attach_row(m_editMainGrid, row, "Theme Name", m_themeNameEntry);
+  attach_row(m_editMainGrid, row, "Theme ID", m_themeIdEntry);
+  attach_row(m_editMainGrid, row, "Icon Path", m_iconPathEntry);
 
-  m_grid.attach(*make_label("League"), 0, row, 1, 1);
-  m_grid.attach(m_leagueEntry, 1, row++, 1, 1);
-
-  m_grid.attach(*make_label("Team Code"), 0, row, 1, 1);
-  m_grid.attach(m_teamCodeEntry, 1, row++, 1, 1);
-
-  m_grid.attach(*make_label("Home/Away"), 0, row, 1, 1);
-  m_grid.attach(m_homeAwayEntry, 1, row++, 1, 1);
-
-  m_grid.attach(*make_label("API Team ID"), 0, row, 1, 1);
-  m_grid.attach(m_apiTeamIdEntry, 1, row++, 1, 1);
-
-  m_grid.attach(*make_label("Enabled"), 0, row, 1, 1);
-  m_grid.attach(m_enabledCheck, 1, row++, 1, 1);
-
-  m_grid.attach(*make_label("Display Order"), 0, row, 1, 1);
-  m_grid.attach(m_displayOrderEntry, 1, row++, 1, 1);
-
-  m_grid.attach(*make_label("Next Game URL"), 0, row, 1, 1);
-  m_grid.attach(m_nextGameUrlEntry, 1, row++, 1, 1);
-
-  m_grid.attach(*make_label("Next Game Parser"), 0, row, 1, 1);
-  m_grid.attach(m_nextGameParserEntry, 1, row++, 1, 1);
-
-  m_grid.attach(*make_label("Live Game URL"), 0, row, 1, 1);
-  m_grid.attach(m_liveGameUrlEntry, 1, row++, 1, 1);
-
-  m_grid.attach(*make_label("Live Game Parser"), 0, row, 1, 1);
-  m_grid.attach(m_liveGameParserEntry, 1, row++, 1, 1);
-
-  m_grid.attach(*make_label("Theme Name"), 0, row, 1, 1);
-  m_grid.attach(m_themeNameEntry, 1, row++, 1, 1);
-
-  m_grid.attach(*make_label("Theme ID"), 0, row, 1, 1);
-  m_grid.attach(m_themeIdEntry, 1, row++, 1, 1);
-
-  m_grid.attach(*make_label("Icon Path"), 0, row, 1, 1);
-  m_grid.attach(m_iconPathEntry, 1, row++, 1, 1);
-
-  m_grid.attach(*make_label("Game Day Anim"), 0, row, 1, 1);
-  m_grid.attach(m_gameDayAnimationsEntry, 1, row++, 1, 1);
-
-  m_grid.attach(*make_label("Score Anim"), 0, row, 1, 1);
-  m_grid.attach(m_homeScoreAnimationsEntry, 1, row++, 1, 1);
-
-  m_grid.attach(*make_label("Blowout Anim"), 0, row, 1, 1);
-  m_grid.attach(m_blowoutAnimationsEntry, 1, row++, 1, 1);
-
-  m_grid.attach(*make_label("Lopsided Anim"), 0, row, 1, 1);
-  m_grid.attach(m_lopsidedAnimationsEntry, 1, row++, 1, 1);
-
-  m_grid.attach(*make_label("Color 1"), 0, row, 1, 1);
-  m_grid.attach(*make_hex_entry_row(m_color1Entry), 1, row++, 1, 1);
-
-  m_grid.attach(*make_label("Color 2"), 0, row, 1, 1);
-  m_grid.attach(*make_hex_entry_row(m_color2Entry), 1, row++, 1, 1);
-
-  m_formBox.pack_start(m_grid, Gtk::PACK_SHRINK);
+  row = 0;
+  attach_row(m_editDetailsGrid, row, "Next Game URL", m_nextGameUrlEntry);
+  attach_row(m_editDetailsGrid, row, "Next Parser", m_nextGameParserEntry);
+  attach_row(m_editDetailsGrid, row, "Live Game URL", m_liveGameUrlEntry);
+  attach_row(m_editDetailsGrid, row, "Live Parser", m_liveGameParserEntry);
+  attach_row(m_editDetailsGrid, row, "Game Day Anim",
+             m_gameDayAnimationsEntry);
+  attach_row(m_editDetailsGrid, row, "Score Anim",
+             m_homeScoreAnimationsEntry);
+  attach_row(m_editDetailsGrid, row, "Blowout Anim",
+             m_blowoutAnimationsEntry);
+  attach_row(m_editDetailsGrid, row, "Lopsided Anim",
+             m_lopsidedAnimationsEntry);
+  attach_row(m_editDetailsGrid, row, "Color 1",
+             *make_hex_entry_row(m_color1Entry));
+  attach_row(m_editDetailsGrid, row, "Color 2",
+             *make_hex_entry_row(m_color2Entry));
 
   auto logoUrlLabel = Gtk::manage(new Gtk::Label("Logo URL"));
   logoUrlLabel->set_halign(Gtk::ALIGN_CENTER);
@@ -167,12 +173,6 @@ EditTeam::EditTeam(const std::string &iconPath, const std::string &teamsDbPath,
 
   m_logoUrlEntry.set_hexpand(true);
   m_logoUrlEntry.set_width_chars(28);
-  m_nextGameUrlEntry.set_width_chars(28);
-  m_liveGameUrlEntry.set_width_chars(28);
-  m_gameDayAnimationsEntry.set_width_chars(28);
-  m_homeScoreAnimationsEntry.set_width_chars(28);
-  m_blowoutAnimationsEntry.set_width_chars(28);
-  m_lopsidedAnimationsEntry.set_width_chars(28);
 
   m_logoPreviewBox.set_spacing(10);
   m_logoPreviewBox.set_border_width(8);
@@ -219,56 +219,235 @@ EditTeam::EditTeam(const std::string &iconPath, const std::string &teamsDbPath,
   m_logoPreviewBox.pack_start(m_logoActionBox, Gtk::PACK_SHRINK);
 
   m_logoFrame.add(m_logoPreviewBox);
-  m_logoFrame.set_size_request(300, 380);
+  m_logoFrame.set_size_request(EDITTEAM_LOGO_FRAME_W, EDITTEAM_LOGO_FRAME_H);
   m_logoFrame.set_shadow_type(Gtk::SHADOW_ETCHED_IN);
 
   loadExistingLogoPreview();
+  loadAnimationEntries();
 
-  m_bodyBox.pack_start(m_formBox, Gtk::PACK_SHRINK);
-  m_bodyBox.pack_start(m_logoFrame, Gtk::PACK_SHRINK);
+  m_editPageMain.set_halign(Gtk::ALIGN_CENTER);
+  m_editPageMain.set_valign(Gtk::ALIGN_START);
+  m_editPageMain.pack_start(m_editMainGrid, Gtk::PACK_SHRINK);
 
-  m_okBtn =
-      Gtk::manage(new ImageButton(m_iconPath + "/ok.png", EDITTEAM_OK_SIZE));
+  m_editPageDetails.set_spacing(EDITTEAM_BODY_SPACING);
+  m_editPageDetails.set_halign(Gtk::ALIGN_CENTER);
+  m_editPageDetails.set_valign(Gtk::ALIGN_START);
+  m_editPageDetails.pack_start(m_editDetailsGrid, Gtk::PACK_SHRINK);
+  m_editPageDetails.pack_start(m_logoFrame, Gtk::PACK_SHRINK);
+
+  m_editStack.set_transition_type(Gtk::STACK_TRANSITION_TYPE_NONE);
+  m_editStack.set_halign(Gtk::ALIGN_CENTER);
+  m_editStack.set_valign(Gtk::ALIGN_START);
+  m_editStack.add(m_editPageMain, "main");
+  m_editStack.add(m_editPageDetails, "details");
+
+  m_editPrevBtn.set_size_request(130, 72);
+  m_editNextBtn.set_size_request(130, 72);
+  m_editCancelBtn.set_size_request(130, 72);
+  m_editSaveBtn.set_size_request(130, 72);
+  m_editPrevBtn.set_can_focus(false);
+  m_editNextBtn.set_can_focus(false);
+  m_editCancelBtn.set_can_focus(false);
+  m_editSaveBtn.set_can_focus(false);
+
   m_deleteBtn = Gtk::manage(
       new ImageButton(m_iconPath + "/trash.png", EDITTEAM_DELETE_LOGO_SIZE));
-  m_cancelBtn = Gtk::manage(
-      new ImageButton(m_iconPath + "/cancel.png", EDITTEAM_CANCEL_SIZE));
 
-  m_buttonBox.set_spacing(EDITTEAM_BUTTON_SPACING);
-  m_buttonBox.set_halign(Gtk::ALIGN_CENTER);
-  m_buttonBox.pack_start(*m_okBtn, Gtk::PACK_SHRINK);
-  if (m_team.id > 0)
-    m_buttonBox.pack_start(*m_deleteBtn, Gtk::PACK_SHRINK);
-  m_buttonBox.pack_start(*m_cancelBtn, Gtk::PACK_SHRINK);
+  m_editNavBox.set_spacing(EDITTEAM_BUTTON_SPACING);
+  m_editNavBox.set_halign(Gtk::ALIGN_CENTER);
+  m_editNavBox.pack_start(m_editPrevBtn, Gtk::PACK_SHRINK);
+  m_editNavBox.pack_start(m_editNextBtn, Gtk::PACK_SHRINK);
+  m_editNavBox.pack_start(m_editCancelBtn, Gtk::PACK_SHRINK);
+  m_editNavBox.pack_start(m_editSaveBtn, Gtk::PACK_SHRINK);
+  m_editNavBox.pack_start(*m_deleteBtn, Gtk::PACK_SHRINK);
 
-  pack_start(m_bodyBox, Gtk::PACK_SHRINK);
-  pack_start(m_buttonBox, Gtk::PACK_SHRINK);
+  pack_start(m_editStack, Gtk::PACK_SHRINK);
+  pack_start(m_editNavBox, Gtk::PACK_SHRINK);
 
-  m_okBtn->signal_clicked().connect([this]() { on_save(); });
+  m_editPrevBtn.signal_clicked().connect([this]() { onEditPrev(); });
+  m_editNextBtn.signal_clicked().connect([this]() { onEditNext(); });
+  m_editCancelBtn.signal_clicked().connect([this]() { m_signalCancel.emit(); });
+  m_editSaveBtn.signal_clicked().connect([this]() { on_save(); });
   m_deleteBtn->signal_clicked().connect([this]() {
     if (m_team.id > 0 && deleteTeam(m_teamsDbPath, m_team.id))
       m_signalDeleted.emit();
   });
-  m_cancelBtn->signal_clicked().connect([this]() { m_signalCancel.emit(); });
-
   m_deleteLogoBtn->signal_clicked().connect([this]() { clearLogoPreview(); });
-
   m_logoUrlEntry.signal_changed().connect([this]() { onLogoUrlChanged(); });
 
-  loadAnimationEntries();
-
+  showEditStep(0);
   show_all_children();
 }
 
-void EditTeam::setLogoStatus(const std::string &text) {
-  m_logoStatusLabel.set_text(text);
+void EditTeam::buildAddWizardUi() {
+  LOG_INFO() << "EditTeam add wizard";
+
+  m_addStack.set_transition_type(Gtk::STACK_TRANSITION_TYPE_NONE);
+  m_addStack.set_halign(Gtk::ALIGN_CENTER);
+  m_addStack.set_valign(Gtk::ALIGN_START);
+
+  auto setupGrid = [](Gtk::Grid &grid) {
+    grid.set_row_spacing(EDITTEAM_GRID_ROW_SPACING + 4);
+    grid.set_column_spacing(EDITTEAM_GRID_COL_SPACING);
+    grid.set_halign(Gtk::ALIGN_CENTER);
+    grid.set_valign(Gtk::ALIGN_START);
+  };
+
+  setupGrid(m_addBasicGrid);
+  setupGrid(m_addApiGrid);
+  setupGrid(m_addUrlsGrid);
+
+  m_addPageBasic.set_spacing(EDITTEAM_FORM_SPACING);
+  m_addPageApi.set_spacing(EDITTEAM_FORM_SPACING);
+  m_addPageUrls.set_spacing(EDITTEAM_FORM_SPACING);
+  m_addPageBasic.set_halign(Gtk::ALIGN_CENTER);
+  m_addPageApi.set_halign(Gtk::ALIGN_CENTER);
+  m_addPageUrls.set_halign(Gtk::ALIGN_CENTER);
+
+  int row = 0;
+  attach_row(m_addBasicGrid, row, "Name", m_nameEntry);
+  attach_row(m_addBasicGrid, row, "League", m_leagueEntry);
+  attach_row(m_addBasicGrid, row, "Team Code", m_teamCodeEntry);
+  attach_row(m_addBasicGrid, row, "Home/Away", m_homeAwayEntry);
+  attach_row(m_addBasicGrid, row, "Enabled", m_enabledCheck);
+  attach_row(m_addBasicGrid, row, "Display Order", m_displayOrderEntry);
+
+  row = 0;
+  attach_row(m_addApiGrid, row, "API Team ID", m_apiTeamIdEntry);
+  attach_row(m_addApiGrid, row, "Next Parser", m_nextGameParserEntry);
+  attach_row(m_addApiGrid, row, "Live Parser", m_liveGameParserEntry);
+
+  row = 0;
+  attach_row(m_addUrlsGrid, row, "Next URL", m_nextGameUrlEntry);
+  attach_row(m_addUrlsGrid, row, "Live URL", m_liveGameUrlEntry);
+  attach_row(m_addUrlsGrid, row, "Theme Name", m_themeNameEntry);
+  attach_row(m_addUrlsGrid, row, "Theme ID", m_themeIdEntry);
+  attach_row(m_addUrlsGrid, row, "Icon Path", m_iconPathEntry);
+
+  m_addPageBasic.pack_start(m_addBasicGrid, Gtk::PACK_SHRINK);
+  m_addPageApi.pack_start(m_addApiGrid, Gtk::PACK_SHRINK);
+  m_addPageUrls.pack_start(m_addUrlsGrid, Gtk::PACK_SHRINK);
+
+  m_addStack.add(m_addPageBasic, "basic");
+  m_addStack.add(m_addPageApi, "api");
+  m_addStack.add(m_addPageUrls, "urls");
+
+  m_addBackBtn.set_size_request(130, 72);
+  m_addNextBtn.set_size_request(130, 72);
+  m_addCancelBtn.set_size_request(130, 72);
+  m_addSaveBtn.set_size_request(130, 72);
+  m_addBackBtn.set_can_focus(false);
+  m_addNextBtn.set_can_focus(false);
+  m_addCancelBtn.set_can_focus(false);
+  m_addSaveBtn.set_can_focus(false);
+
+  m_addNavBox.set_spacing(EDITTEAM_BUTTON_SPACING);
+  m_addNavBox.set_halign(Gtk::ALIGN_CENTER);
+  m_addNavBox.pack_start(m_addBackBtn, Gtk::PACK_SHRINK);
+  m_addNavBox.pack_start(m_addNextBtn, Gtk::PACK_SHRINK);
+  m_addNavBox.pack_start(m_addCancelBtn, Gtk::PACK_SHRINK);
+  m_addNavBox.pack_start(m_addSaveBtn, Gtk::PACK_SHRINK);
+
+  pack_start(m_addStack, Gtk::PACK_SHRINK);
+  pack_start(m_addNavBox, Gtk::PACK_SHRINK);
+
+  m_addBackBtn.signal_clicked().connect([this]() { onAddBack(); });
+  m_addNextBtn.signal_clicked().connect([this]() { onAddNext(); });
+  m_addCancelBtn.signal_clicked().connect([this]() { m_signalCancel.emit(); });
+  m_addSaveBtn.signal_clicked().connect([this]() { on_save(); });
+
+  showAddStep(0);
+  show_all_children();
 }
 
-void EditTeam::showLogoLoading() { setLogoStatus("Loading image..."); }
+void EditTeam::showAddStep(int step) {
+  m_addStep = std::clamp(step, 0, 2);
 
-void EditTeam::showLogoInvalid() { setLogoStatus("Invalid image link"); }
+  if (m_addStep == 0)
+    m_addStack.set_visible_child("basic");
+  else if (m_addStep == 1)
+    m_addStack.set_visible_child("api");
+  else
+    m_addStack.set_visible_child("urls");
 
-void EditTeam::showLogoEmpty() { setLogoStatus("No image selected"); }
+  updateAddNavButtons();
+}
+
+void EditTeam::updateAddNavButtons() {
+  m_addBackBtn.set_sensitive(m_addStep > 0);
+  m_addNextBtn.set_visible(m_addStep < 2);
+  m_addSaveBtn.set_visible(m_addStep == 2);
+}
+
+void EditTeam::onAddBack() { showAddStep(m_addStep - 1); }
+
+void EditTeam::onAddNext() {
+  std::string message;
+  if (!validateAddStep(m_addStep, message)) {
+    m_signalValidationFailed.emit(message);
+    return;
+  }
+
+  showAddStep(m_addStep + 1);
+}
+
+void EditTeam::showEditStep(int step) {
+  m_editStep = std::clamp(step, 0, 1);
+
+  if (m_editStep == 0)
+    m_editStack.set_visible_child("main");
+  else
+    m_editStack.set_visible_child("details");
+
+  updateEditNavButtons();
+}
+
+void EditTeam::updateEditNavButtons() {
+  m_editPrevBtn.set_sensitive(m_editStep > 0);
+  m_editNextBtn.set_visible(m_editStep == 0);
+  m_editSaveBtn.set_visible(m_editStep == 1);
+  if (m_deleteBtn)
+    m_deleteBtn->set_visible(m_editStep == 1);
+}
+
+void EditTeam::onEditPrev() { showEditStep(m_editStep - 1); }
+
+void EditTeam::onEditNext() {
+  std::string message;
+  if (!validateFields(message)) {
+    m_signalValidationFailed.emit(message);
+    return;
+  }
+
+  showEditStep(m_editStep + 1);
+}
+
+bool EditTeam::validateAddStep(int step, std::string &message) const {
+  auto trim = [](std::string s) {
+    const auto first = s.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos)
+      return std::string{};
+    const auto last = s.find_last_not_of(" \t\r\n");
+    return s.substr(first, last - first + 1);
+  };
+
+  if (step == 0) {
+    if (trim(m_nameEntry.get_text()).empty()) {
+      message = "Name needs to be filled in.";
+      return false;
+    }
+    if (trim(m_leagueEntry.get_text()).empty()) {
+      message = "League needs to be filled in.";
+      return false;
+    }
+    if (trim(m_teamCodeEntry.get_text()).empty()) {
+      message = "Team Code needs to be filled in.";
+      return false;
+    }
+  }
+
+  return true;
+}
 
 void EditTeam::onLogoUrlChanged() {
   const std::string url = m_logoUrlEntry.get_text();
@@ -559,6 +738,12 @@ void EditTeam::on_save() {
   }
 
   const bool teamOk = writeTeam(m_teamsDbPath, m_team);
+  if (!teamOk) {
+    LOG_ERROR() << "Failed to save team " << m_team.name;
+    m_signalValidationFailed.emit("Team save failed.");
+    return;
+  }
+
   const bool animOk = teamOk && writeTeamAnimations(m_teamsDbPath, m_team.id,
                                                     collectAnimations());
   const bool hasThemeColors = !m_team.themeName.empty() &&
@@ -572,6 +757,22 @@ void EditTeam::on_save() {
   const bool logoOk = !m_logoUrlEntry.get_text().empty()
                           ? saveLogoFromUrl(m_logoUrlEntry.get_text())
                           : saveLogoPreviewToDisk();
+
+  if (!animOk) {
+    LOG_ERROR() << "Failed to save team animations for " << m_team.name;
+    m_signalValidationFailed.emit("Team saved, but animations failed.");
+    return;
+  }
+
+  if (!colorsOk) {
+    m_signalValidationFailed.emit("Team saved, but theme colors failed.");
+    return;
+  }
+
+  if (!logoOk) {
+    m_signalValidationFailed.emit("Team saved, but logo failed.");
+    return;
+  }
 
   if (teamOk && animOk && colorsOk && logoOk) {
     if (!m_logoUrlEntry.get_text().empty() && !logoOk) {

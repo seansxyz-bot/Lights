@@ -26,8 +26,13 @@ void LightSensorThread::stop() {
     m_thread.join();
 }
 
+bool LightSensorThread::sensorReadingMeansLightsOn(bool rawValue) {
+  return rawValue;
+}
+
 bool LightSensorThread::readOnce() {
-  const bool sensorWantsLightsOn = m_gpio.read(PIN_SENSOR, true);
+  const bool sensorWantsLightsOn =
+      sensorReadingMeansLightsOn(m_gpio.read(PIN_SENSOR, true));
 
   {
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -45,7 +50,8 @@ void LightSensorThread::threadLoop() {
   using namespace std::chrono;
 
   while (m_running) {
-    const bool sensorWantsLightsOn = m_gpio.read(PIN_SENSOR, true);
+    const bool sensorWantsLightsOn =
+        sensorReadingMeansLightsOn(m_gpio.read(PIN_SENSOR, true));
 
     bool emitNow = false;
 
@@ -54,7 +60,7 @@ void LightSensorThread::threadLoop() {
 
       if (!m_initialized) {
         setBaselineLocked(sensorWantsLightsOn);
-      } else if (sensorWantsLightsOn != m_lastState) {
+      } else {
         m_lastState = sensorWantsLightsOn;
         m_pendingState = sensorWantsLightsOn;
         m_hasPending = true;

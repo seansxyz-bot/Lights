@@ -6,24 +6,17 @@
 #include <gtkmm.h>
 #include <mutex>
 #include <string>
+
 #if (SCREEN == 1)
 #define CLOCK_DATE_FONT_PX 56
 #define CLOCK_ENV_FONT_PX 56
 #define CLOCK_TIME_FONT_PX 450
 #define CLOCK_TIME_NUDGE_Y -40
-#define CLOCK_MIN_Y -425
-#define CLOCK_MAX_Y 8
-#define CLOCK_MIN_X -36
-#define CLOCK_MAX_X 36
 #else
 #define CLOCK_DATE_FONT_PX 46
 #define CLOCK_ENV_FONT_PX 46
 #define CLOCK_TIME_FONT_PX 260
 #define CLOCK_TIME_NUDGE_Y -24
-#define CLOCK_MIN_Y -260
-#define CLOCK_MAX_Y 6
-#define CLOCK_MIN_X -24
-#define CLOCK_MAX_X 24
 #endif
 
 class ClockScreen : public Gtk::EventBox {
@@ -33,6 +26,7 @@ public:
 
   void start();
   void stop();
+  void resetPosition();
 
   void setTempHumidity(float temp_f, float humidity);
   void setEnvProvider(const std::function<bool(float &, float &)> &provider);
@@ -42,8 +36,10 @@ public:
   sigc::signal<void> &signal_dismiss_requested();
 
 protected:
+  bool on_event(GdkEvent *event) override;
   bool on_button_press_event(GdkEventButton *event) override;
   void on_size_allocate(Gtk::Allocation &allocation) override;
+  void on_hide() override;
 
 private:
   sigc::connection m_clockTickConn;
@@ -114,6 +110,9 @@ private:
   std::string formatEnv(float temp_f, float humidity) const;
 
   void layoutGrid();
+  void measureClockGroup(int &width, int &height);
+  bool getMovementOffsetBounds(int &minOffsetX, int &maxOffsetX,
+                               int &minOffsetY, int &maxOffsetY);
   bool shiftVertical();
   bool shiftHorizontal();
 

@@ -19,6 +19,7 @@ public:
   void stop();
 
   bool readOnce();
+  static bool sensorReadingMeansLightsOn(bool rawValue);
 
   sigc::signal<void(bool)> &signal_sensor_changed();
 
