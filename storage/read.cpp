@@ -1,5 +1,6 @@
 #include "read.h"
 
+#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <sqlite3.h>
@@ -51,11 +52,6 @@ std::vector<LEDData> readLEDInfo(std::string path) {
   sqlite3_finalize(stmt);
   sqlite3_close(db);
 
-  if (writeToServer) {
-    http.sendLEDsAsync("http://192.168.1.100/lights_apis/sync.php", data,
-                       DEVICE);
-  }
-
   return data;
 }
 
@@ -93,6 +89,8 @@ Options readOptions(std::string path) {
         opts.theme = value;
       else if (name == "ptrn")
         opts.ptrn = value;
+      else if (name == "bluetooth")
+        opts.bluetooth = value;
     }
   } else {
     std::cerr << "Failed to prepare options query: " << sqlite3_errmsg(db)
@@ -101,11 +99,6 @@ Options readOptions(std::string path) {
 
   sqlite3_finalize(stmt);
   sqlite3_close(db);
-
-  if (writeToServer) {
-    http.sendOptionsAsync("http://192.168.1.100/lights_apis/sync.php", opts,
-                          DEVICE);
-  }
 
   return opts;
 }
@@ -241,9 +234,10 @@ std::vector<TeamRecord> readTeams(const std::string &dbPath) {
       "home_away, "
       "next_game_url_template, next_game_parser, "
       "live_game_url_template, live_game_parser, "
-      "api_team_id, enabled, display_order, theme_name, theme_id, icon_path, "
-      "next_game_utc, last_home_score, last_away_score, last_game_id, "
-      "last_checked_utc "
+	      "api_team_id, enabled, display_order, theme_name, theme_id, icon_path, "
+	      "next_game_utc, last_home_score, last_away_score, "
+	      "score_animation_delay_seconds, last_game_id, last_checked_utc, "
+	      "next_opponent_code, next_opponent_name "
       "FROM teams "
       "ORDER BY display_order, name;";
 
@@ -268,8 +262,10 @@ std::vector<TeamRecord> readTeams(const std::string &dbPath) {
       const unsigned char *themeNameText = sqlite3_column_text(stmt, 12);
       const unsigned char *iconPathText = sqlite3_column_text(stmt, 14);
       const unsigned char *nextGameUtcText = sqlite3_column_text(stmt, 15);
-      const unsigned char *lastGameIdText = sqlite3_column_text(stmt, 18);
-      const unsigned char *lastCheckedUtcText = sqlite3_column_text(stmt, 19);
+      const unsigned char *lastGameIdText = sqlite3_column_text(stmt, 19);
+      const unsigned char *lastCheckedUtcText = sqlite3_column_text(stmt, 20);
+      const unsigned char *nextOpponentCodeText = sqlite3_column_text(stmt, 21);
+      const unsigned char *nextOpponentNameText = sqlite3_column_text(stmt, 22);
 
       t.name = nameText ? reinterpret_cast<const char *>(nameText) : "";
       t.league = leagueText ? reinterpret_cast<const char *>(leagueText) : "";
@@ -307,11 +303,21 @@ std::vector<TeamRecord> readTeams(const std::string &dbPath) {
                           : "";
       t.lastHomeScore = sqlite3_column_int(stmt, 16);
       t.lastAwayScore = sqlite3_column_int(stmt, 17);
+      t.scoreAnimationDelaySeconds = sqlite3_column_int(stmt, 18);
       t.lastGameId =
           lastGameIdText ? reinterpret_cast<const char *>(lastGameIdText) : "";
       t.lastCheckedUtc = lastCheckedUtcText
                              ? reinterpret_cast<const char *>(lastCheckedUtcText)
                              : "";
+      t.nextOpponentCode =
+          nextOpponentCodeText
+              ? reinterpret_cast<const char *>(nextOpponentCodeText)
+              : "";
+      t.nextOpponentName =
+          nextOpponentNameText
+              ? reinterpret_cast<const char *>(nextOpponentNameText)
+              : "";
+      t.colors = readTeamColors(dbPath, t.id);
 
       teams.push_back(t);
     }
@@ -321,6 +327,47 @@ std::vector<TeamRecord> readTeams(const std::string &dbPath) {
     sqlite3_finalize(stmt);
   sqlite3_close(db);
   return teams;
+}
+
+std::vector<TeamColor> readTeamColors(const std::string &dbPath, int teamId) {
+  std::vector<TeamColor> colors;
+  ensureSportsSchema(dbPath);
+
+  sqlite3 *db = nullptr;
+  if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
+    if (db)
+      sqlite3_close(db);
+    return colors;
+  }
+
+  const char *sql = R"(
+    SELECT id, team_id, color_role, r, g, b, display_order
+    FROM team_colors
+    WHERE team_id = ?
+    ORDER BY display_order, color_role;
+  )";
+
+  sqlite3_stmt *stmt = nullptr;
+  if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+    sqlite3_bind_int(stmt, 1, teamId);
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+      TeamColor c;
+      c.id = sqlite3_column_int(stmt, 0);
+      c.teamId = sqlite3_column_int(stmt, 1);
+      const unsigned char *roleText = sqlite3_column_text(stmt, 2);
+      c.colorRole = roleText ? reinterpret_cast<const char *>(roleText) : "";
+      c.r = sqlite3_column_int(stmt, 3);
+      c.g = sqlite3_column_int(stmt, 4);
+      c.b = sqlite3_column_int(stmt, 5);
+      c.displayOrder = sqlite3_column_int(stmt, 6);
+      colors.push_back(c);
+    }
+  }
+
+  if (stmt)
+    sqlite3_finalize(stmt);
+  sqlite3_close(db);
+  return colors;
 }
 
 std::vector<TeamAnimation> readTeamAnimations(const std::string &dbPath,
@@ -462,7 +509,7 @@ std::vector<Pattern> readPatternSpeeds(std::string path) {
   while (sqlite3_step(stmt) == SQLITE_ROW) {
     Pattern p;
     p.id = sqlite3_column_int(stmt, 0);
-    p.speed = sqlite3_column_int(stmt, 1);
+    p.speed = std::max(0, std::min(100, sqlite3_column_int(stmt, 1)));
     patterns.push_back(p);
   }
 

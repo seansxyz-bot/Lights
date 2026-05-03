@@ -1,5 +1,6 @@
 #include "iostream"
 #include "mainwindow.h"
+#include "storage/common.h"
 #include <gtkmm/application.h>
 
 void load_css() {
@@ -24,8 +25,7 @@ void load_css() {
   gtk_style_context_add_provider_for_screen(
       screen, GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_USER);
 
-  // Build full path to ~/.lightcontroller/css/cust_but.css
-  std::string css_path = std::string(SETTINGS_PATH) + "/css/cust_but.css";
+  std::string css_path = runtimeSettingsPath() + "/css/cust_but.css";
   std::cout << css_path.c_str() << std::endl;
 
   GError *error = NULL;

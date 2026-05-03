@@ -69,7 +69,6 @@ private:
 
   // ---------- Timers ----------
   sigc::connection m_shiftVertTimerConn;
-  sigc::connection m_shiftHorizTimerConn;
   sigc::connection m_colorTimerConn;
   sigc::connection m_envTimerConn;
 
@@ -104,7 +103,7 @@ private:
 
   void onClockDispatcher();
   void applyPendingText();
-
+  bool updateHourlyVerticalPosition();
   void refreshEnvFromProvider();
 
   std::string formatEnv(float temp_f, float humidity) const;
@@ -112,9 +111,11 @@ private:
   void layoutGrid();
   void measureClockGroup(int &width, int &height);
   bool getMovementOffsetBounds(int &minOffsetX, int &maxOffsetX,
-                               int &minOffsetY, int &maxOffsetY);
-  bool shiftVertical();
-  bool shiftHorizontal();
+                               int &minOffsetY, int &maxOffsetY,
+                               int *screenWOut = nullptr,
+                               int *screenHOut = nullptr,
+                               int *gridWOut = nullptr,
+                               int *gridHOut = nullptr);
 
   void applyColors();
   void setLabelCss(Gtk::Label &label,

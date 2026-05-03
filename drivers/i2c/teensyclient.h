@@ -4,6 +4,7 @@
 #include "../../utils/logger.h"
 
 #include <atomic>
+#include <array>
 #include <cstdint>
 #include <mutex>
 #include <string>
@@ -26,12 +27,22 @@ public:
     CMD_BEGIN_FILE = 0x20,
     CMD_FILE_CHUNK = 0x21,
     CMD_END_FILE = 0x22,
-    CMD_ABORT_FILE = 0x23,
+	    CMD_ABORT_FILE = 0x23,
+
+    CMD_BEGIN_TEAM = 0x30,
+    CMD_TEAM_NAME_CHUNK = 0x31,
+    CMD_TEAM_COLOR = 0x32,
+    CMD_END_TEAM = 0x33,
+    CMD_DELETE_TEAM = 0x34,
+    CMD_ACTIVATE_TEAM = 0x35,
+
+    CMD_HARDWARE_CONFIG = 0x40,
 
     REQ_WAKE_READY = 0xF0,
     REQ_LED_STATE = 0xF1,
     REQ_ALL_OFF_STATUS = 0xF2,
     REQ_FILE_STATUS = 0xF3,
+    REQ_LED_STATE_PAGE = 0xF4,
   };
 
   enum : uint8_t {
@@ -46,7 +57,7 @@ public:
     FILE_ERROR = 3,
   };
 
-  TeensyClient();
+  explicit TeensyClient(std::string bus = "/dev/i2c-1", uint8_t addr = 0x08);
   ~TeensyClient();
 
   bool openBus();
@@ -70,13 +81,19 @@ public:
   bool beginFile(uint8_t fileType, uint8_t fileId, uint8_t lineCount,
                  uint8_t version = 1);
 
-  bool sendThemeColor(uint8_t r, uint8_t g, uint8_t b);
+  bool sendThemeColor(uint8_t r, uint8_t g, uint8_t b, uint8_t sequence = 0);
   bool sendThemeColors(uint8_t themeId, const std::vector<RGB_Color> &colors);
 
   bool sendPatternSpeed(uint8_t patternId, uint8_t speed);
   bool sendPatternSpeeds(const std::vector<Pattern> &patterns);
 
-  bool sendLedFrame(const std::vector<std::array<uint8_t, 3>> &frame);
+	  bool sendLedFrame(const std::vector<std::array<uint8_t, 3>> &frame);
+
+  bool syncTeamColors(uint16_t teamId, const std::string &teamName,
+                      const std::vector<TeamColor> &colors);
+  bool deleteTeamColors(uint16_t teamId);
+  bool activateSportsTeam(uint16_t teamId, bool isHome, uint8_t patternId = 0);
+  bool sendHardwareConfig(uint8_t numLeds, uint8_t numShiftRegs);
 
   bool endFile(uint8_t expectedLines);
   bool abortFile();
@@ -108,6 +125,8 @@ public:
   bool requestThenRead(uint8_t req_code, uint8_t *rx, size_t rx_len);
 
 private:
+  bool requestThenRead(uint8_t req_code, uint8_t req_arg, uint8_t *rx,
+                       size_t rx_len);
   bool ensureOpenLocked();
   bool ensureOpen();
 
@@ -126,6 +145,8 @@ private:
   uint8_t fake_file_id_ = 0;
   uint8_t fake_expected_lines_ = 0;
   uint8_t fake_received_lines_ = 0;
+  uint8_t fake_num_leds_ = NUM_OF_LEDS;
+  uint8_t fake_num_shift_regs_ = NUM_OF_SHIFT_REGS;
 #endif
 
   mutable std::mutex mtx_;

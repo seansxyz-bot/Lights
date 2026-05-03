@@ -25,6 +25,7 @@ public:
   sigc::signal<void> &signal_themes_requested();
   sigc::signal<void> &signal_patterns_requested();
   sigc::signal<void> &signal_settings_requested();
+  void set_lights_actions_enabled(bool enabled);
 
 private:
   void build_ui();

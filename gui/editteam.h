@@ -69,7 +69,6 @@ private:
   bool validateAddStep(int step, std::string &message) const;
 
   static bool hexToRgb(const std::string &hex, int &r, int &g, int &b);
-  static std::string normalizeTeamFileName(const std::string &name);
   static std::string normalizeParserFileName(const std::string &name);
 
   bool saveThemeColorsByThemeName(const std::string &themeName,
@@ -134,6 +133,7 @@ private:
   Gtk::Entry m_themeIdEntry;
   Gtk::Entry m_iconPathEntry;
   Gtk::Entry m_displayOrderEntry;
+  Gtk::SpinButton m_scoreAnimationDelaySpin;
   Gtk::CheckButton m_enabledCheck{"Enabled"};
 
   Gtk::Entry m_gameDayAnimationsEntry;

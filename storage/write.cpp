@@ -1,5 +1,6 @@
 #include "write.h"
 
+#include <algorithm>
 #include <iostream>
 #include <sqlite3.h>
 
@@ -93,11 +94,6 @@ int writeLEDInfo(std::string path, std::vector<LEDData> data) {
 
   sqlite3_close(db);
 
-  if (writeToServer) {
-    http.sendLEDsAsync("http://192.168.1.100/lights_apis/sync.php", data,
-                       DEVICE);
-  }
-
   return 1;
 }
 
@@ -141,14 +137,10 @@ int writeOptions(std::string path, Options data) {
   ok &= writeOne("on", data.on);
   ok &= writeOne("theme", data.theme);
   ok &= writeOne("ptrn", data.ptrn);
+  ok &= writeOne("bluetooth", data.bluetooth);
 
   sqlite3_finalize(stmt);
   sqlite3_close(db);
-
-  if (ok && writeToServer) {
-    http.sendOptionsAsync("http://192.168.1.100/lights_apis/sync.php", data,
-                          DEVICE);
-  }
 
   return ok ? 1 : 0;
 }
@@ -348,7 +340,8 @@ int writePatternSpeeds(std::string path, const std::vector<Pattern> &patterns) {
     sqlite3_clear_bindings(stmt);
 
     sqlite3_bind_int(stmt, 1, p.id);
-    sqlite3_bind_int(stmt, 2, p.speed);
+    const int speed = std::max(0, std::min(100, p.speed));
+    sqlite3_bind_int(stmt, 2, speed);
 
     if (sqlite3_step(stmt) != SQLITE_DONE) {
       std::cerr << "Insert/update pattern speed failed: " << sqlite3_errmsg(db)
@@ -389,10 +382,11 @@ int writeTeam(const std::string &dbPath, TeamRecord &team) {
   const char *insertSql = R"(
     INSERT INTO teams
     (name, league, team_code, home_away, api_team_id, enabled, display_order,
-     icon_path, theme_name, theme_id, next_game_url_template, next_game_parser,
-     live_game_url_template, live_game_parser, next_game_utc, last_home_score,
-     last_away_score, last_game_id, last_checked_utc)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+	     icon_path, theme_name, theme_id, next_game_url_template, next_game_parser,
+	     live_game_url_template, live_game_parser, next_game_utc, last_home_score,
+	     last_away_score, score_animation_delay_seconds, last_game_id,
+	     last_checked_utc, next_opponent_code, next_opponent_name)
+	    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
   )";
 
   const char *updateSql = R"(
@@ -400,10 +394,11 @@ int writeTeam(const std::string &dbPath, TeamRecord &team) {
       name = ?, league = ?, team_code = ?, home_away = ?, api_team_id = ?,
       enabled = ?, display_order = ?, icon_path = ?, theme_name = ?,
       theme_id = ?, next_game_url_template = ?, next_game_parser = ?,
-      live_game_url_template = ?, live_game_parser = ?, next_game_utc = ?,
-      last_home_score = ?, last_away_score = ?, last_game_id = ?,
-      last_checked_utc = ?
-    WHERE id = ?;
+	      live_game_url_template = ?, live_game_parser = ?, next_game_utc = ?,
+	      last_home_score = ?, last_away_score = ?,
+	      score_animation_delay_seconds = ?, last_game_id = ?,
+	      last_checked_utc = ?, next_opponent_code = ?, next_opponent_name = ?
+	    WHERE id = ?;
   )";
 
   sqlite3_stmt *stmt = nullptr;
@@ -441,15 +436,20 @@ int writeTeam(const std::string &dbPath, TeamRecord &team) {
                     SQLITE_TRANSIENT);
   sqlite3_bind_int(stmt, col++, team.lastHomeScore);
   sqlite3_bind_int(stmt, col++, team.lastAwayScore);
+  sqlite3_bind_int(stmt, col++, std::max(0, std::min(120, team.scoreAnimationDelaySeconds)));
   sqlite3_bind_text(stmt, col++, team.lastGameId.c_str(), -1,
                     SQLITE_TRANSIENT);
   sqlite3_bind_text(stmt, col++, team.lastCheckedUtc.c_str(), -1,
+                    SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, col++, team.nextOpponentCode.c_str(), -1,
+                    SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt, col++, team.nextOpponentName.c_str(), -1,
                     SQLITE_TRANSIENT);
 
   if (isUpdate)
     sqlite3_bind_int(stmt, col++, team.id);
 
-  const bool ok = sqlite3_step(stmt) == SQLITE_DONE;
+  bool ok = sqlite3_step(stmt) == SQLITE_DONE;
   if (!ok)
     LOG_ERROR() << "writeTeam failed: " << sqlite3_errmsg(db);
 
@@ -458,6 +458,229 @@ int writeTeam(const std::string &dbPath, TeamRecord &team) {
   if (ok && !isUpdate)
     team.id = static_cast<int>(sqlite3_last_insert_rowid(db));
 
+  sqlite3_close(db);
+  if (ok)
+    ok = writeTeamColors(dbPath, team.id, team.colors) != 0;
+  return ok ? 1 : 0;
+}
+
+int writeTeams(const std::string &dbPath, const std::vector<TeamRecord> &teams) {
+  ensureSportsSchema(dbPath);
+
+  sqlite3 *db = nullptr;
+  if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
+    if (db)
+      sqlite3_close(db);
+    return 0;
+  }
+
+  if (!execSQL(db, "BEGIN TRANSACTION;")) {
+    sqlite3_close(db);
+    return 0;
+  }
+
+  bool ok = true;
+  if (!teams.empty()) {
+    std::string keepIds;
+    for (size_t i = 0; i < teams.size(); ++i) {
+      if (teams[i].id <= 0)
+        continue;
+      if (!keepIds.empty())
+        keepIds += ",";
+      keepIds += std::to_string(teams[i].id);
+    }
+
+    if (!keepIds.empty()) {
+      ok &= execSQL(db, ("DELETE FROM team_animations WHERE team_id NOT IN (" +
+                         keepIds + ");")
+                            .c_str());
+      ok &= execSQL(db, ("DELETE FROM sports_live_state WHERE team_id NOT IN (" +
+                         keepIds + ");")
+                            .c_str());
+      ok &= execSQL(db, ("DELETE FROM team_colors WHERE team_id NOT IN (" +
+                         keepIds + ");")
+                            .c_str());
+      ok &= execSQL(db, ("DELETE FROM teams WHERE id NOT IN (" + keepIds + ");")
+                            .c_str());
+    } else {
+      ok &= execSQL(db, "DELETE FROM team_animations;");
+      ok &= execSQL(db, "DELETE FROM sports_live_state;");
+      ok &= execSQL(db, "DELETE FROM team_colors;");
+      ok &= execSQL(db, "DELETE FROM teams;");
+    }
+  } else {
+    ok &= execSQL(db, "DELETE FROM team_animations;");
+    ok &= execSQL(db, "DELETE FROM sports_live_state;");
+    ok &= execSQL(db, "DELETE FROM team_colors;");
+    ok &= execSQL(db, "DELETE FROM teams;");
+  }
+
+  const char *sql = R"(
+    INSERT INTO teams
+    (id, name, league, team_code, home_away, api_team_id, enabled,
+     display_order, icon_path, theme_name, theme_id, next_game_url_template,
+	     next_game_parser, live_game_url_template, live_game_parser,
+	     next_game_utc, last_home_score, last_away_score,
+	     score_animation_delay_seconds, last_game_id, last_checked_utc,
+	     next_opponent_code, next_opponent_name)
+	    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      league = excluded.league,
+      team_code = excluded.team_code,
+      home_away = excluded.home_away,
+      api_team_id = excluded.api_team_id,
+      enabled = excluded.enabled,
+      display_order = excluded.display_order,
+      icon_path = excluded.icon_path,
+      theme_name = excluded.theme_name,
+      theme_id = excluded.theme_id,
+      next_game_url_template = excluded.next_game_url_template,
+      next_game_parser = excluded.next_game_parser,
+      live_game_url_template = excluded.live_game_url_template,
+      live_game_parser = excluded.live_game_parser,
+      next_game_utc = excluded.next_game_utc,
+	      last_home_score = excluded.last_home_score,
+	      last_away_score = excluded.last_away_score,
+	      score_animation_delay_seconds = excluded.score_animation_delay_seconds,
+	      last_game_id = excluded.last_game_id,
+	      last_checked_utc = excluded.last_checked_utc,
+	      next_opponent_code = excluded.next_opponent_code,
+	      next_opponent_name = excluded.next_opponent_name;
+  )";
+
+  sqlite3_stmt *stmt = nullptr;
+  if (ok && sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    LOG_ERROR() << "writeTeams prepare failed: " << sqlite3_errmsg(db);
+    ok = false;
+  }
+
+  for (const auto &team : teams) {
+    if (!ok)
+      break;
+
+    sqlite3_reset(stmt);
+    sqlite3_clear_bindings(stmt);
+
+    int col = 1;
+    sqlite3_bind_int(stmt, col++, team.id);
+    sqlite3_bind_text(stmt, col++, team.name.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, col++, team.league.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, col++, team.teamCode.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, col++, team.homeAway.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, col++, team.apiTeamId.c_str(), -1,
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, col++, team.enabled);
+    sqlite3_bind_int(stmt, col++, team.displayOrder);
+    sqlite3_bind_text(stmt, col++, team.iconPath.c_str(), -1,
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, col++, team.themeName.c_str(), -1,
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, col++, team.themeID);
+    sqlite3_bind_text(stmt, col++, team.nextGameUrlTemplate.c_str(), -1,
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, col++, team.nextGameParser.c_str(), -1,
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, col++, team.liveGameUrlTemplate.c_str(), -1,
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, col++, team.liveGameParser.c_str(), -1,
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, col++, team.nextGameUtc.c_str(), -1,
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, col++, team.lastHomeScore);
+    sqlite3_bind_int(stmt, col++, team.lastAwayScore);
+    sqlite3_bind_int(stmt, col++, std::max(0, std::min(120, team.scoreAnimationDelaySeconds)));
+    sqlite3_bind_text(stmt, col++, team.lastGameId.c_str(), -1,
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, col++, team.lastCheckedUtc.c_str(), -1,
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, col++, team.nextOpponentCode.c_str(), -1,
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, col++, team.nextOpponentName.c_str(), -1,
+                      SQLITE_TRANSIENT);
+
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+      LOG_ERROR() << "writeTeams failed: " << sqlite3_errmsg(db);
+      ok = false;
+    }
+  }
+
+  if (stmt)
+    sqlite3_finalize(stmt);
+
+  if (ok)
+    ok = execSQL(db, "COMMIT;");
+  else
+    execSQL(db, "ROLLBACK;");
+
+  sqlite3_close(db);
+  if (ok) {
+    for (const auto &team : teams) {
+      if (!team.colors.empty() &&
+          !writeTeamColors(dbPath, team.id, team.colors)) {
+        ok = false;
+        break;
+      }
+    }
+  }
+  return ok ? 1 : 0;
+}
+
+int writeTeamColors(const std::string &dbPath, int teamId,
+                    const std::vector<TeamColor> &colors) {
+  sqlite3 *db = nullptr;
+  if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
+    if (db)
+      sqlite3_close(db);
+    return 0;
+  }
+
+  if (!execSQL(db, "BEGIN TRANSACTION;")) {
+    sqlite3_close(db);
+    return 0;
+  }
+
+  sqlite3_stmt *deleteStmt = nullptr;
+  bool ok = true;
+  if (sqlite3_prepare_v2(db, "DELETE FROM team_colors WHERE team_id = ?;", -1,
+                         &deleteStmt, nullptr) == SQLITE_OK) {
+    sqlite3_bind_int(deleteStmt, 1, teamId);
+    ok &= sqlite3_step(deleteStmt) == SQLITE_DONE;
+  } else {
+    ok = false;
+  }
+  if (deleteStmt)
+    sqlite3_finalize(deleteStmt);
+
+  const char *sql = R"(
+    INSERT INTO team_colors
+      (team_id, color_role, r, g, b, display_order)
+    VALUES (?, ?, ?, ?, ?, ?);
+  )";
+  sqlite3_stmt *stmt = nullptr;
+  if (ok && sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK)
+    ok = false;
+
+  for (const auto &color : colors) {
+    if (!ok)
+      break;
+    sqlite3_reset(stmt);
+    sqlite3_clear_bindings(stmt);
+    sqlite3_bind_int(stmt, 1, teamId);
+    sqlite3_bind_text(stmt, 2, color.colorRole.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 3, std::max(0, std::min(255, color.r)));
+    sqlite3_bind_int(stmt, 4, std::max(0, std::min(255, color.g)));
+    sqlite3_bind_int(stmt, 5, std::max(0, std::min(255, color.b)));
+    sqlite3_bind_int(stmt, 6, color.displayOrder);
+    ok &= sqlite3_step(stmt) == SQLITE_DONE;
+  }
+
+  if (stmt)
+    sqlite3_finalize(stmt);
+  if (ok)
+    ok = execSQL(db, "COMMIT;");
+  else
+    execSQL(db, "ROLLBACK;");
   sqlite3_close(db);
   return ok ? 1 : 0;
 }
@@ -493,6 +716,17 @@ int deleteTeam(const std::string &dbPath, int teamId) {
   stmt = nullptr;
   const char *deleteStateSql = "DELETE FROM sports_live_state WHERE team_id = ?;";
   if (sqlite3_prepare_v2(db, deleteStateSql, -1, &stmt, nullptr) == SQLITE_OK) {
+    sqlite3_bind_int(stmt, 1, teamId);
+    ok &= sqlite3_step(stmt) == SQLITE_DONE;
+  } else {
+    ok = false;
+  }
+  if (stmt)
+    sqlite3_finalize(stmt);
+
+  stmt = nullptr;
+  const char *deleteColorsSql = "DELETE FROM team_colors WHERE team_id = ?;";
+  if (sqlite3_prepare_v2(db, deleteColorsSql, -1, &stmt, nullptr) == SQLITE_OK) {
     sqlite3_bind_int(stmt, 1, teamId);
     ok &= sqlite3_step(stmt) == SQLITE_DONE;
   } else {

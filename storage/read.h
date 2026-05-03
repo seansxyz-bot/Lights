@@ -8,6 +8,7 @@ std::vector<Schedule> readSchedule(std::string path);
 std::vector<Theme> readThemeColors(const std::string &dbPath);
 std::vector<Pattern> readPatternSpeeds(std::string path);
 std::vector<TeamRecord> readTeams(const std::string &dbPath);
+std::vector<TeamColor> readTeamColors(const std::string &dbPath, int teamId);
 std::vector<TeamAnimation> readTeamAnimations(const std::string &dbPath,
                                               int teamId);
 std::vector<TeamAnimation>

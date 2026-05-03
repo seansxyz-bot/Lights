@@ -56,8 +56,7 @@ public:
   using FrameSender = std::function<bool(const LedFrame &)>;
 
   explicit LightShow(size_t num_leds_total = 19,
-                     const std::string &monitor_source =
-                         "alsa_output.platform-soc_sound.pro-output-0.monitor");
+                     const std::string &monitor_source = "");
   ~LightShow();
 
   bool start();

@@ -2,10 +2,12 @@
 
 #include "../drivers/network/httphelper.h"
 #include "../utils/logger.h"
+#include "../utils/teamassets.h"
 #include "imgbutton.h"
 
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
 #include <gdkmm/pixbufloader.h>
 #include <sstream>
 
@@ -69,6 +71,11 @@ EditTeam::EditTeam(const std::string &iconPath, const std::string &teamsDbPath,
   m_themeIdEntry.set_text(std::to_string(m_team.themeID));
   m_iconPathEntry.set_text(m_team.iconPath);
   m_displayOrderEntry.set_text(std::to_string(m_team.displayOrder));
+  m_scoreAnimationDelaySpin.set_range(0, 120);
+  m_scoreAnimationDelaySpin.set_increments(1, 10);
+  m_scoreAnimationDelaySpin.set_digits(0);
+  m_scoreAnimationDelaySpin.set_value(
+      std::clamp(m_team.scoreAnimationDelaySeconds, 0, 120));
   m_enabledCheck.set_active(m_team.enabled != 0);
   m_nextGameUrlEntry.set_width_chars(28);
   m_liveGameUrlEntry.set_width_chars(28);
@@ -82,7 +89,7 @@ EditTeam::EditTeam(const std::string &iconPath, const std::string &teamsDbPath,
   m_color2Entry.set_max_length(6);
 
   if (!m_team.themeName.empty()) {
-    auto themes = readThemeColors(std::string(SETTINGS_PATH));
+    auto themes = readThemeColors(runtimeSettingsPath());
 
     auto it =
         std::find_if(themes.begin(), themes.end(), [this](const Theme &theme) {
@@ -142,6 +149,8 @@ void EditTeam::buildEditWizardUi() {
   attach_row(m_editMainGrid, row, "API Team ID", m_apiTeamIdEntry);
   attach_row(m_editMainGrid, row, "Enabled", m_enabledCheck);
   attach_row(m_editMainGrid, row, "Display Order", m_displayOrderEntry);
+  attach_row(m_editMainGrid, row, "Score Animation Delay (seconds)",
+             m_scoreAnimationDelaySpin);
   attach_row(m_editMainGrid, row, "Theme Name", m_themeNameEntry);
   attach_row(m_editMainGrid, row, "Theme ID", m_themeIdEntry);
   attach_row(m_editMainGrid, row, "Icon Path", m_iconPathEntry);
@@ -311,6 +320,8 @@ void EditTeam::buildAddWizardUi() {
   attach_row(m_addBasicGrid, row, "Home/Away", m_homeAwayEntry);
   attach_row(m_addBasicGrid, row, "Enabled", m_enabledCheck);
   attach_row(m_addBasicGrid, row, "Display Order", m_displayOrderEntry);
+  attach_row(m_addBasicGrid, row, "Score Animation Delay (seconds)",
+             m_scoreAnimationDelaySpin);
 
   row = 0;
   attach_row(m_addApiGrid, row, "API Team ID", m_apiTeamIdEntry);
@@ -520,23 +531,6 @@ bool EditTeam::hexToRgb(const std::string &hexIn, int &r, int &g, int &b) {
   return true;
 }
 
-std::string EditTeam::normalizeTeamFileName(const std::string &name) {
-  std::string s = name;
-
-  std::transform(s.begin(), s.end(), s.begin(),
-                 [](unsigned char c) { return std::tolower(c); });
-
-  if (s.rfind("the ", 0) == 0)
-    s.erase(0, 4);
-
-  for (char &c : s) {
-    if (c == ' ')
-      c = '_';
-  }
-
-  return s + "_logo.png";
-}
-
 std::string EditTeam::normalizeParserFileName(const std::string &name) {
   std::string s = name;
 
@@ -612,10 +606,21 @@ bool EditTeam::saveLogoPreviewToDisk() {
   if (!m_logoPixbuf)
     return true;
 
-  const std::string filePath = std::string(ICON_PATH) + "/" +
-                               normalizeTeamFileName(m_nameEntry.get_text());
+  TeamRecord logoTeam = m_team;
+  logoTeam.name = m_nameEntry.get_text();
+  logoTeam.league = m_leagueEntry.get_text();
+  logoTeam.teamCode = m_teamCodeEntry.get_text();
+  logoTeam.apiTeamId = m_apiTeamIdEntry.get_text();
+
+  const std::string filePath = getTeamLogoStoragePath(logoTeam);
+  if (filePath.empty()) {
+    LOG_ERROR() << "Cannot save logo without league/team id";
+    return false;
+  }
 
   try {
+    std::filesystem::create_directories(
+        std::filesystem::path(filePath).parent_path());
     m_logoPixbuf->save(filePath, "png");
     LOG_INFO() << "Saved logo preview to " << filePath;
     return true;
@@ -628,7 +633,7 @@ bool EditTeam::saveLogoPreviewToDisk() {
 bool EditTeam::saveThemeColorsByThemeName(const std::string &themeName,
                                           const std::string &hex1,
                                           const std::string &hex2) {
-  auto themes = readThemeColors(std::string(SETTINGS_PATH));
+  auto themes = readThemeColors(runtimeSettingsPath());
 
   auto it = std::find_if(
       themes.begin(), themes.end(),
@@ -656,7 +661,7 @@ bool EditTeam::saveThemeColorsByThemeName(const std::string &themeName,
   it->colors[1] = RGB_Color{static_cast<uint8_t>(r2), static_cast<uint8_t>(g2),
                             static_cast<uint8_t>(b2)};
 
-  writeThemeColors(std::string(SETTINGS_PATH), themes);
+  writeThemeColors(runtimeSettingsPath(), themes);
   LOG_INFO() << "Saved colors to theme " << themeName;
 
   return true;
@@ -688,9 +693,21 @@ bool EditTeam::saveLogoFromUrl(const std::string &url) {
       return false;
     }
 
-    const std::string filePath = std::string(ICON_PATH) + "/" +
-                                 normalizeTeamFileName(m_nameEntry.get_text());
+    TeamRecord logoTeam = m_team;
+    logoTeam.name = m_nameEntry.get_text();
+    logoTeam.league = m_leagueEntry.get_text();
+    logoTeam.teamCode = m_teamCodeEntry.get_text();
+    logoTeam.apiTeamId = m_apiTeamIdEntry.get_text();
 
+    const std::string filePath = getTeamLogoStoragePath(logoTeam);
+    if (filePath.empty()) {
+      showLogoInvalid();
+      LOG_ERROR() << "Cannot save logo without league/team id";
+      return false;
+    }
+
+    std::filesystem::create_directories(
+        std::filesystem::path(filePath).parent_path());
     pixbuf->save(filePath, "png");
     updateLogoPreview(pixbuf);
 
@@ -736,6 +753,8 @@ void EditTeam::on_save() {
   } catch (...) {
     m_team.displayOrder = 0;
   }
+  m_team.scoreAnimationDelaySeconds =
+      std::clamp(m_scoreAnimationDelaySpin.get_value_as_int(), 0, 120);
 
   const bool teamOk = writeTeam(m_teamsDbPath, m_team);
   if (!teamOk) {
@@ -789,8 +808,7 @@ void EditTeam::loadExistingLogoPreview() {
     return;
   }
 
-  const std::string filePath =
-      std::string(ICON_PATH) + "/" + normalizeTeamFileName(m_team.name);
+  const std::string filePath = getTeamLogoPath(m_team);
 
   try {
     auto pixbuf = Gdk::Pixbuf::create_from_file(filePath);

@@ -25,6 +25,16 @@ struct Pattern {
   int speed{50};
 };
 
+struct TeamColor {
+  int id = 0;
+  int teamId = 0;
+  std::string colorRole;
+  int r = 0;
+  int g = 0;
+  int b = 0;
+  int displayOrder = 0;
+};
+
 struct TeamRecord {
   int id = 0;
   std::string name;
@@ -47,8 +57,12 @@ struct TeamRecord {
   Gdk::RGBA c2;
   int lastHomeScore = -1;
   int lastAwayScore = -1;
+  int scoreAnimationDelaySeconds = 0;
   std::string lastGameId;
   std::string lastCheckedUtc;
+  std::string nextOpponentCode;
+  std::string nextOpponentName;
+  std::vector<TeamColor> colors;
 };
 
 struct TeamAnimation {
@@ -82,10 +96,11 @@ struct Options {
   int on;
   int theme;
   int ptrn;
+  int bluetooth = 0;
 
   bool operator==(const Options &o) const {
     return sensor == o.sensor && on == o.on && theme == o.theme &&
-           ptrn == o.ptrn;
+           ptrn == o.ptrn && bluetooth == o.bluetooth;
   }
 
   bool operator!=(const Options &o) const { return !(*this == o); }

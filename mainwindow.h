@@ -2,13 +2,6 @@
 
 #include "utils/logger.h"
 
-#if (UBUNTU == 1)
-#define DOORBELL_SOUND_DEVICE                                                  \
-  "paplay --device=alsa_output.pci-0000_00_05.0.analog-stereo"
-#else
-#define DOORBELL_SOUND_DEVICE ""
-#endif
-
 #include "bluetooth/bluezagent.h"
 #include "bluetooth/btcontrol.h"
 #include "drivers/gpio/gpiohelper.h"
@@ -34,6 +27,8 @@
 #include "threads/sportspoller.h"
 #include "utils/parserhelper.h"
 #include <atomic>
+#include <chrono>
+#include <deque>
 #include <gtkmm.h>
 #include <memory>
 #include <mutex>
@@ -46,11 +41,14 @@ class Themes;
 class Patterns;
 class DeltaAll;
 class DeltaGroup;
-class Engine;
+class GameDayAnimation;
+class DebugPage;
+class DebugSportsPage;
 class EditThemes;
 class EditThemePage;
 class EditPattern;
 class LightShowSettingsPage;
+class HardwareConfigPage;
 
 enum class BluetoothManualAction { None, Connect, Delete };
 
@@ -65,6 +63,9 @@ private:
   void stopLightShow();
   bool setLightsPowerEnabled(bool enabled);
   bool waitForTeensyReady();
+  void updateLightsDependentUi();
+  bool lightsAreOn() const;
+  bool requireLightsOnForHomeAction();
 
 private:
   std::atomic<bool> m_shuttingDown{false};
@@ -72,17 +73,27 @@ private:
   std::mutex m_lightShowMutex;
 
   bool isSportsSchedule(const Schedule &s);
-  void applyCurrentScheduleState();
+  void applyCurrentScheduleState(bool preserveManualOn = false);
+  void applyPostSportsState();
+  bool applySportsTeamColors(const TeamRecord &team, bool isHome,
+                             uint8_t patternId = 0);
+  bool syncSportsTeamToTeensy(const TeamRecord &team);
+  bool deleteSportsTeamFromTeensy(int teamId, const std::string &teamName);
+  bool applyNormalScheduleState();
+  bool anyNormalScheduleActive();
   void restoreManualLedsAsync();
   void joinManualRestoreThread();
 
   void sendThemeToTeensyAsync(int themeId, const std::string &themeName,
                               const std::vector<RGB_Color> &colors);
+  void queueThemeUploadToTeensy(const Theme &theme);
+  void queueThemeUploadsToTeensy(const std::vector<Theme> &themes);
+  void startNextThemeUpload();
 
   void sendPatternSpeedsToTeensyAsync(const std::vector<Pattern> &patterns);
 
   std::unique_ptr<LightShow> m_lightShow;
-  bool m_lightShowRunning = false;
+  std::atomic<bool> m_lightShowRunning{false};
   bool m_sportsAnimationRunning = false;
 
   // ---------- app data ----------
@@ -105,6 +116,12 @@ private:
 
   void onPowerSwitchChanged(bool enabled);
   void onBluetoothPowerChanged(bool enabled);
+  bool setAmpEnabledForBluetooth(bool enabled, const std::string &reason);
+  void handleBluetoothConnected();
+  void handleBluetoothDisconnected();
+  void startBluetoothIdleTimeout();
+  void cancelBluetoothIdleTimeout();
+  bool onBluetoothIdleTimeoutTick();
 
   PowerSwitch m_powerSwitch;
   int m_groupSelection = 0;
@@ -115,6 +132,9 @@ private:
   AmpSwitch m_ampSwitch;
   std::atomic<bool> m_ampEnabled{false};
   std::atomic<bool> m_btInitialized{false};
+  std::atomic<bool> m_bluetoothConnected{false};
+  bool m_btIdleTimeoutActive = false;
+  std::chrono::steady_clock::time_point m_btLastDisconnectTime{};
 
   // ---------- main shell ----------
   Gtk::Overlay m_overlay;
@@ -130,7 +150,10 @@ private:
   DeltaGroup *m_deltaGroupPage = nullptr;
   Themes *m_themesPage = nullptr;
   Patterns *m_patternPage = nullptr;
-  Engine *m_gameDayPage = nullptr;
+  GameDayAnimation *m_gameDayPage = nullptr;
+  DebugPage *m_debugPage = nullptr;
+  DebugSportsPage *m_debugSportsPage = nullptr;
+  Gtk::Box *m_debugPlaceholderPage = nullptr;
   EditThemes *m_editThemesPage = nullptr;
   EditThemePage *m_editThemePage = nullptr;
   EditPattern *m_editPatternPage = nullptr;
@@ -139,12 +162,17 @@ private:
   EditTeam *m_editTeam = nullptr;
   BluetoothControls *m_bluetoothControlsPage = nullptr;
   BluetoothDeviceDetail *m_bluetoothDeviceDetailPage = nullptr;
+  HardwareConfigPage *m_hardwareConfigPage = nullptr;
 
   std::atomic<bool> m_btBusy{false};
   std::thread m_btWorker;
   std::thread m_themeSendThread;
   std::thread m_patternSendThread;
+  std::thread m_hardwareConfigThread;
   std::thread m_manualRestoreThread;
+  std::atomic<bool> m_hardwareConfigBusy{false};
+  std::mutex m_themeUploadMutex;
+  std::deque<Theme> m_pendingThemeUploads;
   Glib::Dispatcher m_btUiDispatcher;
   Glib::Dispatcher m_btManualUiDispatcher;
 
@@ -164,6 +192,7 @@ private:
   // ---------- inactivity / screensaver ----------
   sigc::connection m_idleClockConn;
   bool m_clockVisible = false;
+  bool m_returnToClockAfterGameDay = false;
 
   // ---------- app threads ----------
   DoorbellThread m_doorbellThread;
@@ -182,10 +211,15 @@ private:
   std::vector<Pattern> m_startupPatterns;
   std::vector<TeamRecord> m_startupTeams;
   bool m_startupBtInitOk = false;
+  bool m_startupAutoEnabled = false;
   bool m_startupDesiredPowerOn = false;
   bool m_startupPowerReady = false;
   bool m_startupSensorRead = false;
   bool m_startupSensorWantedOn = false;
+  bool m_startupCacheComplete = false;
+  bool m_startupHardwareComplete = false;
+  bool m_startupSyncStarted = false;
+  bool m_runtimeServerSyncEnabled = false;
 
   // ---------- app connections ----------
   sigc::connection m_themeConn;
@@ -200,14 +234,23 @@ private:
   sigc::connection m_mobileOptionsConn;
   sigc::connection m_mobileLedsConn;
   sigc::connection m_mobileSchedulesConn;
+  sigc::connection m_mobileThemesConn;
+  sigc::connection m_mobilePatternsConn;
+  sigc::connection m_mobileTeamsConn;
+  sigc::connection m_mobileStartupSyncConn;
   sigc::connection m_sportsGamesConn;
   sigc::connection m_sportsLiveUpdateConn;
   sigc::connection m_sportsHomeScoreConn;
   sigc::connection m_sportsGameFinishedConn;
   sigc::connection m_bluetoothPollConn;
   sigc::connection m_bluetoothEnableTimeoutConn;
+  sigc::connection m_bluetoothIdleTimeoutConn;
   sigc::connection m_toastHideConn;
   sigc::connection m_sportsAnimationTimeoutConn;
+  sigc::connection m_debugActionTimeoutConn;
+  Options m_debugSavedOptions{};
+  bool m_debugSavedPowerEnabled = false;
+  bool m_debugLightSnapshotValid = false;
 
 private:
   // ---------- setup ----------
@@ -217,6 +260,8 @@ private:
   void onStartupCacheLoaded();
   void startStartupHardwareApply();
   void onStartupHardwareFinished();
+  void maybeStartStartupSync();
+  void refreshStartupFinalLightStateIfReady();
   void ensureThemesLoaded();
   void ensurePatternsLoaded();
   void ensureTeamsLoaded();
@@ -232,6 +277,21 @@ private:
   void onMobileOptionsChanged(const Options &options);
   void onMobileLEDsChanged(const std::vector<LEDData> &ledInfo);
   void onMobileSchedulesChanged(const std::vector<Schedule> &schedule);
+  void onMobileThemesChanged(const std::vector<Theme> &themes);
+  void onMobilePatternsChanged(const std::vector<Pattern> &patterns);
+  void onMobileTeamsChanged(const std::vector<TeamRecord> &teams);
+  void onStartupSyncComplete();
+  bool persistOptions(const Options &options, bool pushToServer = true);
+  bool persistLEDInfo(const std::vector<LEDData> &ledInfo,
+                      bool pushToServer = true);
+  bool persistSchedule(const std::vector<Schedule> &schedule,
+                       bool pushToServer = true);
+  bool persistThemes(const std::vector<Theme> &themes,
+                     bool pushToServer = true);
+  bool persistPatterns(const std::vector<Pattern> &patterns,
+                       bool pushToServer = true);
+  bool persistTeams(const std::vector<TeamRecord> &teams,
+                    bool pushToServer = true);
 
   void disconnectAllBluetoothDevices();
   bool onBluetoothPollTick();
@@ -252,10 +312,18 @@ private:
   void showDeltaAllPage();
   void showDeltaGroupPage();
   void showClockPage();
-  void showGameDayPage();
   void showLightShowSettingsPage();
   void showBluetoothControlsPage();
   void showBluetoothDeviceDetailPage(const BTDevice &device);
+  void showHardwareConfigPage();
+  void showDebugPage();
+  void showDebugSportsPage();
+  void runDebugSportsScheduleUpdate(const std::string &teamName);
+  void runDebugGameDayAnimation(const std::string &teamName);
+  void runDebugScorePlaceholder();
+  void finishDebugTimedAction();
+  void snapshotDebugLightState();
+  void restoreDebugLightState();
 
   void destroyTemporaryPage(const std::string &pageName);
   void destroyAllTemporaryPages();
@@ -283,6 +351,7 @@ private:
   void onSportsGamesChecked(std::vector<SportsNextGameEvent> events);
   void onSportsLiveUpdate(SportsLiveEvent event);
   void onSportsHomeScore(SportsLiveEvent event);
+  void runSportsScoreAnimation(SportsLiveEvent event);
   void onSportsGameFinished(SportsLiveEvent event);
   void triggerSportsAnimation(const TeamRecord &team,
                               const std::string &animationType,
@@ -305,12 +374,14 @@ private:
   void removeTeamListPage();
   void removeBluetoothControlsPage();
   void removeBluetoothDeviceDetailPage();
+  void removeHardwareConfigPage();
 
   // ---------- helpers ----------
   void showEditThemesPage();
   void showEditThemePage(int themeId);
   void showEditPatternPage();
   void applyLightShowControl(LightShowControl control, float value);
+  void sendHardwareConfigToTeensyAsync(int numLeds, int numShiftRegs);
 
   void updateOptions(const Options &options);
   void updateScheduleEntry(int index, const Schedule &entry);

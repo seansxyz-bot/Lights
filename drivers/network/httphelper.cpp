@@ -2,29 +2,118 @@
 
 #include <iostream>
 
+namespace {
+bool expectsApiSuccessFlag(const std::string &url) {
+  return url.find("/lights_api/") != std::string::npos;
+}
+} // namespace
+
 HttpHelper::HttpHelper() { curl_global_init(CURL_GLOBAL_DEFAULT); }
 
 HttpHelper::~HttpHelper() { curl_global_cleanup(); }
 
 json HttpHelper::toJson(const LEDData &led) {
-  return {{"name", std::string(led.name)}, {"group", led.group},
-          {"redPin", led.redPin},          {"grnPin", led.grnPin},
-          {"bluPin", led.bluPin},          {"redVal", led.redVal},
-          {"grnVal", led.grnVal},          {"bluVal", led.bluVal}};
+  return {{"name", std::string(led.name)},
+          {"led_name", std::string(led.name)},
+          {"group", led.group},
+          {"led_group", led.group},
+          {"redPin", led.redPin},
+          {"red_pin", led.redPin},
+          {"pin_red", led.redPin},
+          {"grnPin", led.grnPin},
+          {"grn_pin", led.grnPin},
+          {"pin_grn", led.grnPin},
+          {"bluPin", led.bluPin},
+          {"blu_pin", led.bluPin},
+          {"pin_blu", led.bluPin},
+          {"redVal", led.redVal},
+          {"red_value", led.redVal},
+          {"grnVal", led.grnVal},
+          {"grn_value", led.grnVal},
+          {"bluVal", led.bluVal},
+          {"blu_value", led.bluVal}};
 }
 
 json HttpHelper::toJson(const Options &opt) {
-  return {{"sensor", opt.sensor},
+  return {{"auto", opt.sensor},
+          {"sensor", opt.sensor},
           {"on", opt.on},
           {"theme", opt.theme},
-          {"ptrn", opt.ptrn}};
+          {"pattern", opt.ptrn},
+          {"ptrn", opt.ptrn},
+          {"bluetooth", opt.bluetooth}};
 }
 
 json HttpHelper::toJson(const Schedule &sch) {
-  return {{"name", sch.name},       {"themeID", sch.themeID},
-          {"enabled", sch.enabled}, {"sDate", sch.sDate},
-          {"sTime", sch.sTime},     {"eDate", sch.eDate},
-          {"eTime", sch.eTime}};
+  return {{"name", sch.name},
+          {"theme_name", sch.name},
+          {"themeID", sch.themeID},
+          {"theme_id", sch.themeID},
+          {"enabled", sch.enabled},
+          {"theme_enabled", sch.enabled},
+          {"sDate", sch.sDate},
+          {"start_date", sch.sDate},
+          {"sTime", sch.sTime},
+          {"start_time", sch.sTime},
+          {"eDate", sch.eDate},
+          {"end_date", sch.eDate},
+          {"eTime", sch.eTime},
+          {"end_time", sch.eTime}};
+}
+
+json HttpHelper::toJson(const Theme &theme) {
+  json colors = json::array();
+  for (int i = 0; i < static_cast<int>(theme.colors.size()); ++i) {
+    const auto &c = theme.colors[i];
+    colors.push_back({{"color_index", i}, {"r", c.r}, {"g", c.g}, {"b", c.b}});
+  }
+  return {{"theme_id", theme.id},
+          {"id", theme.id},
+          {"name", theme.name},
+          {"fileName", theme.fileName},
+          {"filename", theme.fileName},
+          {"colors", colors}};
+}
+
+json HttpHelper::toJson(const Pattern &pattern) {
+  return {{"id", pattern.id}, {"speed", pattern.speed}};
+}
+
+json HttpHelper::toJson(const TeamRecord &team) {
+  json colors = json::array();
+  for (const auto &color : team.colors) {
+    colors.push_back({{"id", color.id},
+                      {"team_id", color.teamId},
+                      {"color_role", color.colorRole},
+                      {"r", color.r},
+                      {"g", color.g},
+                      {"b", color.b},
+                      {"display_order", color.displayOrder}});
+  }
+  return {{"id", team.id},
+          {"name", team.name},
+          {"league", team.league},
+          {"team_code", team.teamCode},
+          {"home_away", team.homeAway},
+          {"next_game_url_template", team.nextGameUrlTemplate},
+          {"next_game_parser", team.nextGameParser},
+          {"live_game_url_template", team.liveGameUrlTemplate},
+          {"live_game_parser", team.liveGameParser},
+          {"api_team_id", team.apiTeamId},
+          {"enabled", team.enabled},
+          {"display_order", team.displayOrder},
+          {"theme_name", team.themeName},
+          {"theme_id", team.themeID},
+          {"icon_path", team.iconPath},
+          {"next_game_utc", team.nextGameUtc},
+          {"last_home_score", team.lastHomeScore},
+          {"last_away_score", team.lastAwayScore},
+          {"score_animation_delay_seconds", team.scoreAnimationDelaySeconds},
+          {"last_game_id", team.lastGameId},
+          {"last_checked_utc", team.lastCheckedUtc},
+          {"next_opponent_code", team.nextOpponentCode},
+          {"next_opponent_name", team.nextOpponentName},
+          {"colors", colors}};
 }
 
 json HttpHelper::toJson(const std::vector<LEDData> &leds) {
@@ -43,6 +132,30 @@ json HttpHelper::toJson(const std::vector<Schedule> &schedules) {
   return arr;
 }
 
+json HttpHelper::toJson(const std::vector<Theme> &themes) {
+  json arr = json::array();
+  for (const auto &theme : themes) {
+    arr.push_back(HttpHelper::toJson(theme));
+  }
+  return arr;
+}
+
+json HttpHelper::toJson(const std::vector<Pattern> &patterns) {
+  json arr = json::array();
+  for (const auto &pattern : patterns) {
+    arr.push_back(HttpHelper::toJson(pattern));
+  }
+  return arr;
+}
+
+json HttpHelper::toJson(const std::vector<TeamRecord> &teams) {
+  json arr = json::array();
+  for (const auto &team : teams) {
+    arr.push_back(HttpHelper::toJson(team));
+  }
+  return arr;
+}
+
 size_t HttpHelper::writeCallback(void *contents, size_t size, size_t nmemb,
                                  void *userp) {
   ((std::string *)userp)->append((char *)contents, size * nmemb);
@@ -50,8 +163,6 @@ size_t HttpHelper::writeCallback(void *contents, size_t size, size_t nmemb,
 }
 
 std::string HttpHelper::get(const std::string &url) const {
-  // std::cout << "CURL GET: " << url << std::endl;
-
   CURL *curl = curl_easy_init();
   std::string response;
 
@@ -71,14 +182,29 @@ std::string HttpHelper::get(const std::string &url) const {
   curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
 
   CURLcode res = curl_easy_perform(curl);
+  long httpCode = 0;
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
 
   if (res != CURLE_OK) {
-    std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res)
-              << std::endl;
-  } else {
-    long httpCode = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
-    // std::cout << "HTTP " << httpCode << std::endl;
+    LOG_ERROR() << "HTTP GET failed url=" << url
+                << " error=" << curl_easy_strerror(res);
+    response.clear();
+  } else if (httpCode != 200) {
+    LOG_ERROR() << "HTTP GET failed url=" << url << " status=" << httpCode;
+    response.clear();
+  } else if (expectsApiSuccessFlag(url)) {
+    try {
+      const json parsed = json::parse(response);
+      if (!parsed.is_object() || !parsed.value("success", false)) {
+        LOG_ERROR() << "HTTP GET rejected by API url=" << url
+                    << " body=" << response;
+        response.clear();
+      }
+    } catch (const std::exception &e) {
+      LOG_ERROR() << "HTTP GET returned invalid JSON url=" << url
+                  << " error=" << e.what() << " body=" << response;
+      response.clear();
+    }
   }
 
   curl_easy_cleanup(curl);
@@ -87,9 +213,6 @@ std::string HttpHelper::get(const std::string &url) const {
 
 std::string HttpHelper::postJson(const std::string &url,
                                  const json &payload) const {
-  // std::cout << "CURL POST: " << url << std::endl;
-  // std::cout << "Payload: " << payload.dump() << std::endl;
-
   CURL *curl = curl_easy_init();
   std::string response;
 
@@ -123,16 +246,28 @@ std::string HttpHelper::postJson(const std::string &url,
   long httpCode = 0;
   curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
   if (res != CURLE_OK) {
-    std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res);
-    if (errbuf[0] != '\0') {
-      std::cerr << " | " << errbuf;
-    }
-    std::cerr << std::endl;
+    LOG_ERROR() << "HTTP POST failed url=" << url
+                << " error=" << curl_easy_strerror(res)
+                << (errbuf[0] != '\0' ? std::string(" detail=") + errbuf
+                                      : std::string());
+    response.clear();
+  } else if (httpCode != 200) {
+    LOG_ERROR() << "HTTP POST failed url=" << url << " status=" << httpCode
+                << " body=" << response;
+    response.clear();
   } else {
-    long httpCode = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
-    // std::cout << "HTTP " << httpCode << std::endl;
-    // std::cout << "Response body: " << response << std::endl;
+    try {
+      const json parsed = json::parse(response);
+      if (!parsed.is_object() || !parsed.value("success", false)) {
+        LOG_ERROR() << "HTTP POST rejected by API url=" << url
+                    << " body=" << response;
+        response.clear();
+      }
+    } catch (const std::exception &e) {
+      LOG_ERROR() << "HTTP POST returned invalid JSON url=" << url
+                  << " error=" << e.what() << " body=" << response;
+      response.clear();
+    }
   }
 
   curl_slist_free_all(headers);
@@ -157,6 +292,12 @@ std::string HttpHelper::sendOptions(const std::string &url, const Options &opt,
     payload["device"] = device;
   }
   payload["options"] = HttpHelper::toJson(opt);
+  payload["data"] = json::array(
+      {{{"name", "auto"}, {"value", opt.sensor}},
+       {{"name", "on"}, {"value", opt.on}},
+       {{"name", "theme"}, {"value", opt.theme}},
+       {{"name", "ptrn"}, {"value", opt.ptrn}},
+       {{"name", "bluetooth"}, {"value", opt.bluetooth}}});
   return postJson(url, payload);
 }
 
@@ -190,6 +331,39 @@ std::string HttpHelper::sendSchedules(const std::string &url,
     payload["device"] = device;
   }
   payload["schedules"] = HttpHelper::toJson(schedules);
+  return postJson(url, payload);
+}
+
+std::string HttpHelper::sendThemes(const std::string &url,
+                                   const std::vector<Theme> &themes,
+                                   const std::string &device) const {
+  json payload;
+  if (!device.empty()) {
+    payload["device"] = device;
+  }
+  payload["themes"] = HttpHelper::toJson(themes);
+  return postJson(url, payload);
+}
+
+std::string HttpHelper::sendPatterns(const std::string &url,
+                                     const std::vector<Pattern> &patterns,
+                                     const std::string &device) const {
+  json payload;
+  if (!device.empty()) {
+    payload["device"] = device;
+  }
+  payload["patterns"] = HttpHelper::toJson(patterns);
+  return postJson(url, payload);
+}
+
+std::string HttpHelper::sendTeams(const std::string &url,
+                                  const std::vector<TeamRecord> &teams,
+                                  const std::string &device) const {
+  json payload;
+  if (!device.empty()) {
+    payload["device"] = device;
+  }
+  payload["teams"] = HttpHelper::toJson(teams);
   return postJson(url, payload);
 }
 

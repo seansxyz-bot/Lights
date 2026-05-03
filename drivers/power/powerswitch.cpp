@@ -14,7 +14,10 @@ int teensyValueForEnabled(bool enabled) { return enabled ? 1 : 0; }
 int srValueForEnabled(bool enabled) { return enabled ? 0 : 1; }
 } // namespace
 
-PowerSwitch::PowerSwitch(const std::string &chipName) : m_chipName(chipName) {}
+PowerSwitch::PowerSwitch(const std::string &chipName, int teensySwitch,
+                         int srSwitch)
+    : m_chipName(chipName), m_teensySwitch(teensySwitch),
+      m_srSwitch(srSwitch) {}
 
 std::string PowerSwitch::lastError() const { return m_lastError; }
 
@@ -48,8 +51,8 @@ bool PowerSwitch::setEnabled(bool enabled) {
   gpiod_line_settings_set_direction(settings, GPIOD_LINE_DIRECTION_OUTPUT);
 
   unsigned int offsets[2] = {
-      static_cast<unsigned int>(TEENSY_SWITCH),
-      static_cast<unsigned int>(SR_SWITCH),
+      static_cast<unsigned int>(m_teensySwitch),
+      static_cast<unsigned int>(m_srSwitch),
   };
 
   if (gpiod_line_config_add_line_settings(lineCfg, offsets, 2, settings) < 0) {

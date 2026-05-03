@@ -39,7 +39,9 @@ bool isTerminalState(const std::string &state) {
     c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
   return s == "final" || s == "off" || s == "complete" ||
-         s == "completed" || s == "post" || s == "closed";
+         s == "completed" || s == "post" || s == "closed" ||
+         s == "ended" || s == "postponed" || s == "cancelled" ||
+         s == "canceled";
 }
 
 bool isLiveState(const std::string &state) {
@@ -49,6 +51,28 @@ bool isLiveState(const std::string &state) {
 
   return s == "live" || s == "inprogress" || s == "in_progress" ||
          s == "active" || s == "critical" || s == "gameon";
+}
+
+void normalizeGameForTeam(const TeamRecord &team, ParsedNextGame &game) {
+  const std::string key = !team.apiTeamId.empty() ? team.apiTeamId : team.teamCode;
+  game.isHome = game.homeTeam == key || game.homeTeam == team.teamCode;
+  const bool isAway = game.awayTeam == key || game.awayTeam == team.teamCode;
+  game.opponent = game.isHome ? game.awayTeam : game.homeTeam;
+  if (!game.isHome && !isAway)
+    game.opponent = game.awayTeam.empty() ? game.homeTeam : game.awayTeam;
+  game.teamScore = game.isHome ? game.homeScore : game.awayScore;
+  game.opponentScore = game.isHome ? game.awayScore : game.homeScore;
+}
+
+void normalizeGameForTeam(const TeamRecord &team, ParsedLiveGame &game) {
+  const std::string key = !team.apiTeamId.empty() ? team.apiTeamId : team.teamCode;
+  game.isHome = game.homeTeam == key || game.homeTeam == team.teamCode;
+  const bool isAway = game.awayTeam == key || game.awayTeam == team.teamCode;
+  game.opponent = game.isHome ? game.awayTeam : game.homeTeam;
+  if (!game.isHome && !isAway)
+    game.opponent = game.awayTeam.empty() ? game.homeTeam : game.awayTeam;
+  game.teamScore = game.isHome ? game.homeScore : game.awayScore;
+  game.opponentScore = game.isHome ? game.awayScore : game.homeScore;
 }
 } // namespace
 
@@ -165,6 +189,7 @@ DailySportsPoller::pollTeams(const std::vector<TeamRecord> &teams) {
                  << error;
       continue;
     }
+    normalizeGameForTeam(team, game);
 
     events.push_back({team, game});
   }
@@ -242,6 +267,13 @@ void LiveGamePoller::pollTeam(const TeamRecord &team) {
   if (!parser.loadParserConfig(m_settingsPath, team.liveGameParser, cfg))
     return;
 
+  std::string error;
+  if (cfg.mode != "live_game" || !parser.validateParserConfig(cfg, error)) {
+    LOG_WARN() << "LiveGamePoller parser invalid for " << team.name << ": "
+               << error;
+    return;
+  }
+
   HttpHelper http;
   const std::string url = expandTemplate(team.liveGameUrlTemplate, team);
   const std::string payload = http.get(url);
@@ -250,13 +282,13 @@ void LiveGamePoller::pollTeam(const TeamRecord &team) {
     return;
   }
 
-  std::string error;
   ParsedLiveGame game;
   if (!parser.parseLiveGameJson(payload, cfg, game, error)) {
     LOG_WARN() << "LiveGamePoller parse failed for " << team.name << ": "
                << error;
     return;
   }
+  normalizeGameForTeam(team, game);
 
   SportsLiveEvent event;
   event.team = team;
@@ -278,7 +310,9 @@ void LiveGamePoller::pollTeam(const TeamRecord &team) {
     event.oldHomeScore = state.home;
     event.oldAwayScore = state.away;
 
-    if (state.valid && game.homeScore > state.home)
+    const int previousTeamScore = game.isHome ? state.home : state.away;
+    if (state.valid && state.gameId == game.id &&
+        game.teamScore > previousTeamScore)
       homeScore = true;
 
     state.valid = true;
@@ -291,13 +325,17 @@ void LiveGamePoller::pollTeam(const TeamRecord &team) {
     if (homeScore)
       m_pendingScores.push_back(event);
 
-    if (isTerminalState(game.state)) {
+    const std::string stateText =
+        game.normalizedStatus.empty() ? game.state : game.normalizedStatus;
+    if (isTerminalState(stateText)) {
       finished = true;
       m_pendingFinished.push_back(event);
     }
   }
 
-  if (isLiveState(game.state) || homeScore || finished)
+  const std::string stateText =
+      game.normalizedStatus.empty() ? game.state : game.normalizedStatus;
+  if (isLiveState(stateText) || homeScore || finished)
     m_dispatcher.emit();
 }
 

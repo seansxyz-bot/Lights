@@ -9,6 +9,9 @@ int writeThemeColors(const std::string dbPath,
                      const std::vector<Theme> &themes);
 int writePatternSpeeds(std::string path, const std::vector<Pattern> &patterns);
 int writeTeam(const std::string &dbPath, TeamRecord &team);
+int writeTeams(const std::string &dbPath, const std::vector<TeamRecord> &teams);
+int writeTeamColors(const std::string &dbPath, int teamId,
+                    const std::vector<TeamColor> &colors);
 int deleteTeam(const std::string &dbPath, int teamId);
 int writeTeamAnimations(const std::string &dbPath, int teamId,
                         const std::vector<TeamAnimation> &animations);

@@ -23,18 +23,24 @@ public:
   ~HttpHelper();
 
   std::string get(const std::string &url) const;
-  std::vector<unsigned char> getBytes(const std::string &url) const; // NEW
+  std::vector<unsigned char> getBytes(const std::string &url) const;
   bool downloadToFile(const std::string &url,
-                      const std::string &filePath) const; // NEW
+                      const std::string &filePath) const;
 
   std::string postJson(const std::string &url, const json &payload) const;
 
   static json toJson(const LEDData &led);
   static json toJson(const Options &opt);
   static json toJson(const Schedule &sch);
+  static json toJson(const Theme &theme);
+  static json toJson(const Pattern &pattern);
+  static json toJson(const TeamRecord &team);
 
   static json toJson(const std::vector<LEDData> &leds);
   static json toJson(const std::vector<Schedule> &schedules);
+  static json toJson(const std::vector<Theme> &themes);
+  static json toJson(const std::vector<Pattern> &patterns);
+  static json toJson(const std::vector<TeamRecord> &teams);
 
   std::string sendLED(const std::string &url, const LEDData &led,
                       const std::string &device = "") const;
@@ -51,6 +57,15 @@ public:
   std::string sendSchedules(const std::string &url,
                             const std::vector<Schedule> &schedules,
                             const std::string &device = "") const;
+  std::string sendThemes(const std::string &url,
+                         const std::vector<Theme> &themes,
+                         const std::string &device = "") const;
+  std::string sendPatterns(const std::string &url,
+                           const std::vector<Pattern> &patterns,
+                           const std::string &device = "") const;
+  std::string sendTeams(const std::string &url,
+                        const std::vector<TeamRecord> &teams,
+                        const std::string &device = "") const;
 
   std::string sendAll(const std::string &url, const Options &opt,
                       const std::vector<LEDData> &leds,
@@ -77,5 +92,5 @@ private:
                               void *userp);
 
   static size_t writeVectorCallback(void *contents, size_t size, size_t nmemb,
-                                    void *userp); // NEW
+                                    void *userp);
 };

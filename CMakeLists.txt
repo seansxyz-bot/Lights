@@ -42,6 +42,9 @@ set(SOURCES
     bluetooth/bluezclient.h
     bluetooth/btcontrol.h
 
+    debug/debugpage.h
+    debug/debugsportspage.h
+
     drivers/gpio/gpiohelper.h
     drivers/i2c/bme280.h
     drivers/i2c/teensyclient.h
@@ -49,9 +52,13 @@ set(SOURCES
     drivers/power/ampswitch.h
     drivers/power/powerswitch.h
 
-    engine/engine.h
-    engine/lightshow.h
-    engine/renderer.h
+	    engine/engine.h
+	    engine/baseballgamedayanimation.h
+	    engine/footballgamedayanimation.h
+	    engine/gamedayanimation.h
+	    engine/hockeygamedayanimation.h
+	    engine/lightshow.h
+	    engine/renderer.h
 
     gui/calandar.h
     gui/bluetoothcontrols.h
@@ -64,6 +71,7 @@ set(SOURCES
     gui/editthemes.h
     gui/editteam.h
     gui/home.h
+    gui/hardwareconfigpage.h
     gui/imgbutton.h
     gui/keypad.h
     gui/lightshowsettings.h
@@ -88,6 +96,7 @@ set(SOURCES
     utils/buttonimagemaker.h
     utils/logger.h
     utils/parserhelper.h
+    utils/teamassets.h
 
     # --------------------
     # SOURCES (.cpp / .c)
@@ -96,6 +105,9 @@ set(SOURCES
     bluetooth/bluezclient.cpp
     bluetooth/btcontrol.cpp
 
+    debug/debugpage.cpp
+    debug/debugsportspage.cpp
+
     drivers/gpio/gpiohelper.cpp
     drivers/i2c/bme280.c
     drivers/i2c/teensyclient.cpp
@@ -103,8 +115,12 @@ set(SOURCES
     drivers/power/ampswitch.cpp
     drivers/power/powerswitch.cpp
 
-    engine/engine.cpp
-    engine/lightshow.cpp
+	    engine/engine.cpp
+	    engine/baseballgamedayanimation.cpp
+	    engine/footballgamedayanimation.cpp
+	    engine/gamedayanimation.cpp
+	    engine/hockeygamedayanimation.cpp
+	    engine/lightshow.cpp
     engine/renderer.cpp
 
     gui/calandar.cpp
@@ -118,6 +134,7 @@ set(SOURCES
     gui/editthemes.cpp
     gui/editteam.cpp
     gui/home.cpp
+    gui/hardwareconfigpage.cpp
     gui/lightshowsettings.cpp
     gui/patterns.cpp
     gui/settings.cpp
@@ -138,6 +155,7 @@ set(SOURCES
     threads/sportspoller.cpp
 
     utils/parserhelper.cpp
+    utils/teamassets.cpp
 )
 
 add_executable(LightingControl ${SOURCES}

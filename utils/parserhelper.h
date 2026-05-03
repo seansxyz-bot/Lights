@@ -12,6 +12,7 @@ struct ParserConfig {
   std::string mode; // next_game, live_game
   std::string root;
   std::string select;
+  std::string items;
 
   std::map<std::string, std::string> fields;
 };
@@ -25,6 +26,11 @@ struct ParsedNextGame {
   std::string awayTeam;
   int homeScore = 0;
   int awayScore = 0;
+  bool isHome = false;
+  std::string opponent;
+  std::string normalizedStatus;
+  int teamScore = 0;
+  int opponentScore = 0;
 };
 
 struct ParsedLiveGame {
@@ -38,6 +44,11 @@ struct ParsedLiveGame {
   int awayScore = 0;
   std::string period;
   std::string clock;
+  bool isHome = false;
+  std::string opponent;
+  std::string normalizedStatus;
+  int teamScore = 0;
+  int opponentScore = 0;
 };
 
 class ParserHelper {
@@ -68,4 +79,6 @@ private:
   static const nlohmann::json *selectRootItem(const nlohmann::json &j,
                                               const ParserConfig &cfg,
                                               std::string &error);
+  static const nlohmann::json *getByPath(const nlohmann::json &j,
+                                         const std::string &path);
 };

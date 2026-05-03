@@ -2,7 +2,8 @@
 
 #include <gpiod.h>
 
-AmpSwitch::AmpSwitch(const std::string &chipName) : m_chipName(chipName) {}
+AmpSwitch::AmpSwitch(const std::string &chipName, int ampSwitch)
+    : m_chipName(chipName), m_ampSwitch(ampSwitch) {}
 
 std::string AmpSwitch::lastError() const { return m_lastError; }
 
@@ -35,13 +36,13 @@ bool AmpSwitch::setEnabled(bool enabled) {
   gpiod_request_config_set_consumer(reqCfg, "lights-amp-switch");
   gpiod_line_settings_set_direction(settings, GPIOD_LINE_DIRECTION_OUTPUT);
 
-  const int value = enabled ? 0 : 1;
+  const int value = enabled ? 1 : 0;
   const gpiod_line_value outValue =
       value ? GPIOD_LINE_VALUE_ACTIVE : GPIOD_LINE_VALUE_INACTIVE;
 
   gpiod_line_settings_set_output_value(settings, outValue);
 
-  unsigned int offset = static_cast<unsigned int>(AMP_SWITCH);
+  unsigned int offset = static_cast<unsigned int>(m_ampSwitch);
 
   if (gpiod_line_config_add_line_settings(lineCfg, &offset, 1, settings) < 0) {
     m_lastError = "Failed to configure AMP_SWITCH line";

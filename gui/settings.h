@@ -35,7 +35,6 @@ public:
 
   void set_restart_enabled(bool enabled);
   void set_bluetooth_enabled(bool enabled);
-  void set_lightshow_enabled(bool enabled);
 
   sigc::signal<void, bool> &signal_auto_sensor_toggled();
   sigc::signal<void, bool> &signal_lights_toggled();
@@ -43,8 +42,9 @@ public:
   sigc::signal<void> &signal_edit_theme_requested();
   sigc::signal<void> &signal_edit_pattern_requested();
   sigc::signal<void> &signal_edit_teams_requested();
-  sigc::signal<void> &signal_lightshow_requested();
   sigc::signal<void> &signal_bluetooth_controls_requested();
+  sigc::signal<void> &signal_hardware_config_requested();
+  sigc::signal<void> &signal_debug_requested();
   sigc::signal<void> &signal_restart_requested();
   sigc::signal<void> &signal_done();
 
@@ -65,8 +65,9 @@ private:
   ImageButton *m_editThemeBtn = nullptr;
   ImageButton *m_editPatternBtn = nullptr;
   ImageButton *m_editTeamsBtn = nullptr;
-  ImageButton *m_lightShowBtn = nullptr;
   ImageButton *m_bluetoothControlsBtn = nullptr;
+  Gtk::Button *m_hardwareConfigBtn = nullptr;
+  Gtk::Button *m_debugBtn = nullptr;
   ImageButton *m_restartBtn = nullptr;
   ImageButton *m_okBtn = nullptr;
 
@@ -76,8 +77,9 @@ private:
   sigc::signal<void> m_signalEditThemeRequested;
   sigc::signal<void> m_signalEditPatternRequested;
   sigc::signal<void> m_signalEditTeamsRequested;
-  sigc::signal<void> m_signalLightShowRequested;
   sigc::signal<void> m_signalBluetoothControlsRequested;
+  sigc::signal<void> m_signalHardwareConfigRequested;
+  sigc::signal<void> m_signalDebugRequested;
   sigc::signal<void> m_signalRestartRequested;
   sigc::signal<void> m_signalDone;
 };

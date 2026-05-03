@@ -88,6 +88,22 @@ void Home::connect_signals() {
   LOG_INFO() << "Home signals connected";
 }
 
+void Home::set_lights_actions_enabled(bool enabled) {
+  const double opacity = enabled ? 1.0 : 0.35;
+
+  if (m_deltaAllBtn)
+    m_deltaAllBtn->set_opacity(opacity);
+
+  if (m_deltaGroupBtn)
+    m_deltaGroupBtn->set_opacity(opacity);
+
+  if (m_themesBtn)
+    m_themesBtn->set_opacity(opacity);
+
+  if (m_patternsBtn)
+    m_patternsBtn->set_opacity(opacity);
+}
+
 sigc::signal<void> &Home::signal_delta_all_requested() {
   return m_signalDeltaAllRequested;
 }

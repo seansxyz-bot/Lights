@@ -10,13 +10,13 @@
 #include <sstream>
 
 namespace {
-constexpr int CLOCK_MOVE_PADDING_LEFT = 40;
-constexpr int CLOCK_MOVE_PADDING_RIGHT = 60;
-constexpr int CLOCK_MOVE_PADDING_TOP = 20;
-constexpr int CLOCK_MOVE_PADDING_BOTTOM = 20;
+constexpr int CLOCK_MOVE_PADDING_LEFT = 10;
+constexpr int CLOCK_MOVE_PADDING_RIGHT = 10;
+constexpr int CLOCK_MOVE_PADDING_TOP = 10;
+constexpr int CLOCK_MOVE_PADDING_BOTTOM = 10;
 constexpr int MIN_REAL_ALLOCATION = 100;
-constexpr int CLOCK_VERTICAL_STEP_PX = 6;
-constexpr int CLOCK_HORIZONTAL_STEP_PX = 2;
+constexpr int CLOCK_POSITION_REFRESH_MS = 1000;
+
 } // namespace
 
 ClockScreen::ClockScreen()
@@ -163,14 +163,12 @@ void ClockScreen::start() {
   layoutGrid();
   queue_draw();
 
-  if (!m_shiftVertTimerConn.connected()) {
-    m_shiftVertTimerConn = Glib::signal_timeout().connect_seconds(
-        sigc::mem_fun(*this, &ClockScreen::shiftVertical), 2);
-  }
+  updateHourlyVerticalPosition();
 
-  if (!m_shiftHorizTimerConn.connected()) {
-    m_shiftHorizTimerConn = Glib::signal_timeout().connect_seconds(
-        sigc::mem_fun(*this, &ClockScreen::shiftHorizontal), 5);
+  if (!m_shiftVertTimerConn.connected()) {
+    m_shiftVertTimerConn = Glib::signal_timeout().connect(
+        sigc::mem_fun(*this, &ClockScreen::updateHourlyVerticalPosition),
+        CLOCK_POSITION_REFRESH_MS);
   }
 
   if (!m_envTimerConn.connected()) {
@@ -186,7 +184,64 @@ void ClockScreen::start() {
 
   LOG_INFO() << "ClockScreen started";
 }
+bool ClockScreen::updateHourlyVerticalPosition() {
+  if (!m_started)
+    return false;
 
+  int minOffsetX = 0;
+  int maxOffsetX = 0;
+  int minOffsetY = 0;
+  int maxOffsetY = 0;
+
+  if (!getMovementOffsetBounds(minOffsetX, maxOffsetX, minOffsetY, maxOffsetY))
+    return true;
+
+  m_offsetX = 0;
+
+  if (minOffsetY >= maxOffsetY) {
+    m_offsetY = 0;
+    layoutGrid();
+    return true;
+  }
+
+  const auto now = std::chrono::system_clock::now();
+  const std::time_t t = std::chrono::system_clock::to_time_t(now);
+
+  std::tm localTm{};
+#if defined(_WIN32)
+  localtime_s(&localTm, &t);
+#else
+  localtime_r(&t, &localTm);
+#endif
+
+  const double seconds =
+      static_cast<double>(localTm.tm_min * 60 + localTm.tm_sec);
+  const double phase = seconds / 3600.0;
+
+  const int centerY = 0;
+  const int bottomY = maxOffsetY;
+  const int topY = minOffsetY;
+
+  auto lerp = [](double a, double b, double p) { return a + ((b - a) * p); };
+
+  double y = 0.0;
+
+  if (phase < 0.25) {
+    y = lerp(centerY, bottomY, phase / 0.25);
+  } else if (phase < 0.50) {
+    y = lerp(bottomY, topY, (phase - 0.25) / 0.25);
+  } else if (phase < 0.75) {
+    y = lerp(topY, bottomY, (phase - 0.50) / 0.25);
+  } else {
+    y = lerp(bottomY, centerY, (phase - 0.75) / 0.25);
+  }
+
+  m_offsetY =
+      std::clamp(static_cast<int>(std::lround(y)), minOffsetY, maxOffsetY);
+
+  layoutGrid();
+  return true;
+}
 void ClockScreen::stop() {
   const bool wasStarted = m_started;
   if (wasStarted)
@@ -194,9 +249,6 @@ void ClockScreen::stop() {
 
   if (m_shiftVertTimerConn.connected())
     m_shiftVertTimerConn.disconnect();
-
-  if (m_shiftHorizTimerConn.connected())
-    m_shiftHorizTimerConn.disconnect();
 
   if (m_envTimerConn.connected())
     m_envTimerConn.disconnect();
@@ -276,76 +328,6 @@ void ClockScreen::applyColors() {
   m_lblClock.override_color(m_fgColor);
 }
 
-bool ClockScreen::shiftVertical() {
-  if (!m_started)
-    return false;
-
-  int minOffsetX = 0;
-  int maxOffsetX = 0;
-  int minOffsetY = 0;
-  int maxOffsetY = 0;
-
-  if (!getMovementOffsetBounds(minOffsetX, maxOffsetX, minOffsetY, maxOffsetY))
-    return true;
-
-  if (minOffsetY >= maxOffsetY) {
-    m_offsetY = minOffsetY;
-    layoutGrid();
-    return true;
-  }
-
-  if (m_moveDown)
-    m_offsetY += CLOCK_VERTICAL_STEP_PX;
-  else
-    m_offsetY -= CLOCK_VERTICAL_STEP_PX;
-
-  if (m_offsetY >= maxOffsetY) {
-    m_offsetY = maxOffsetY;
-    m_moveDown = false;
-  } else if (m_offsetY <= minOffsetY) {
-    m_offsetY = minOffsetY;
-    m_moveDown = true;
-  }
-
-  layoutGrid();
-  return true;
-}
-
-bool ClockScreen::shiftHorizontal() {
-  if (!m_started)
-    return false;
-
-  int minOffsetX = 0;
-  int maxOffsetX = 0;
-  int minOffsetY = 0;
-  int maxOffsetY = 0;
-
-  if (!getMovementOffsetBounds(minOffsetX, maxOffsetX, minOffsetY, maxOffsetY))
-    return true;
-
-  if (minOffsetX >= maxOffsetX) {
-    m_offsetX = minOffsetX;
-    layoutGrid();
-    return true;
-  }
-
-  if (m_moveRight)
-    m_offsetX += CLOCK_HORIZONTAL_STEP_PX;
-  else
-    m_offsetX -= CLOCK_HORIZONTAL_STEP_PX;
-
-  if (m_offsetX >= maxOffsetX) {
-    m_offsetX = maxOffsetX;
-    m_moveRight = false;
-  } else if (m_offsetX <= minOffsetX) {
-    m_offsetX = minOffsetX;
-    m_moveRight = true;
-  }
-
-  layoutGrid();
-  return true;
-}
-
 void ClockScreen::setLabelCss(Gtk::Label &label,
                               const Glib::RefPtr<Gtk::CssProvider> &provider,
                               int px, int weight) {
@@ -382,14 +364,8 @@ void ClockScreen::layoutGrid() {
   requestedGridH = std::min(requestedGridH, h);
   m_grid.set_size_request(requestedGridW, requestedGridH);
 
-  const auto gridAlloc = m_grid.get_allocation();
-  int gridW = gridAlloc.get_width();
-  int gridH = gridAlloc.get_height();
-
-  if (gridW > w || gridH > h || gridW <= 1 || gridH <= 1) {
-    gridW = requestedGridW;
-    gridH = requestedGridH;
-  }
+  int gridW = requestedGridW;
+  int gridH = requestedGridH;
 
   if (gridW <= 1 || gridH <= 1)
     return;
@@ -462,7 +438,9 @@ void ClockScreen::measureClockGroup(int &width, int &height) {
 }
 
 bool ClockScreen::getMovementOffsetBounds(int &minOffsetX, int &maxOffsetX,
-                                          int &minOffsetY, int &maxOffsetY) {
+                                          int &minOffsetY, int &maxOffsetY,
+                                          int *screenWOut, int *screenHOut,
+                                          int *gridWOut, int *gridHOut) {
   const auto alloc = get_allocation();
   const int w = alloc.get_width();
   const int h = alloc.get_height();
@@ -481,14 +459,8 @@ bool ClockScreen::getMovementOffsetBounds(int &minOffsetX, int &maxOffsetX,
   requestedGridH = std::min(requestedGridH, h);
   m_grid.set_size_request(requestedGridW, requestedGridH);
 
-  const auto gridAlloc = m_grid.get_allocation();
-  int gridW = gridAlloc.get_width();
-  int gridH = gridAlloc.get_height();
-
-  if (gridW > w || gridH > h || gridW <= 1 || gridH <= 1) {
-    gridW = requestedGridW;
-    gridH = requestedGridH;
-  }
+  int gridW = requestedGridW;
+  int gridH = requestedGridH;
 
   if (gridW <= 1 || gridH <= 1)
     return false;
@@ -512,6 +484,15 @@ bool ClockScreen::getMovementOffsetBounds(int &minOffsetX, int &maxOffsetX,
   maxOffsetX = (maxRight - gridW) - centeredX;
   minOffsetY = minTop - centeredY;
   maxOffsetY = (maxBottom - gridH) - centeredY;
+
+  if (screenWOut)
+    *screenWOut = w;
+  if (screenHOut)
+    *screenHOut = h;
+  if (gridWOut)
+    *gridWOut = gridW;
+  if (gridHOut)
+    *gridHOut = gridH;
 
   return true;
 }
